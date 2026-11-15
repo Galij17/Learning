@@ -1,0 +1,66 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.vue';
+@source '../**/*.ts';
+
+@theme {
+    --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+    --color-sapphire-950: #1E293B;
+    --color-sapphire-900: #283548;
+    --color-sapphire-800: #3E4F69;
+    --color-cobalt-700: #1B2CC1;
+    --color-cobalt-800: #142194;
+    --color-periwinkle-500: #7692FF;
+    --color-sky-300: #ABD2FA;
+    --color-sky-100: #E2E8F0;
+    --color-canvas-light: #F8FAFC;
+}
+
+@layer base {
+    a[href],
+    button:not(:disabled),
+    summary,
+    select:not(:disabled),
+    label[for],
+    input[type='checkbox']:not(:disabled),
+    input[type='radio']:not(:disabled),
+    [role='button']:not([aria-disabled='true']),
+    [role='tab']:not([aria-disabled='true']),
+    [role='switch']:not([aria-disabled='true']) {
+        cursor: pointer;
+    }
+
+    button:disabled,
+    select:disabled,
+    input:disabled,
+    textarea:disabled {
+        cursor: not-allowed;
+    }
+
+    :focus-visible {
+        outline: 2px solid #7692FF;
+        outline-offset: 2px;
+    }
+
+    .dark :focus-visible {
+        outline-color: #ABD2FA;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
