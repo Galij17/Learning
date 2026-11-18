@@ -99,6 +99,10 @@ async function persistAnswer(questionId: number): Promise<void> {
         if (status === 422) {
             toast.error('Waktu ujian telah berakhir atau percobaan sudah ditutup.');
             router.visit(route('student.quizzes.result', [props.course.id, props.quiz.id, props.attempt.id]));
+        } else if (status === 419) {
+            toast.error('Sesi keamanan kedaluwarsa. Muat ulang halaman untuk melanjutkan.');
+        } else if (status === 429) {
+            toast.warning('Terlalu banyak permintaan autosave. Jawaban akan disimpan otomatis sebentar lagi.');
         } else {
             toast.error('Gagal autosave jawaban. Periksa koneksi Anda.');
         }

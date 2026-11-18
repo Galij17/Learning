@@ -562,10 +562,10 @@ function submitSettings(): void {
                         <Link :href="route('instructor.question-bank.index')" class="inline-flex min-h-[40px] items-center rounded-[8px] border border-[#1B2CC1] px-3.5 text-xs font-semibold text-[#1B2CC1] dark:border-[#ABD2FA] dark:text-[#ABD2FA]">
                             Buka Bank Soal
                         </Link>
-                        <button type="button" @click="showQuizModal = true" class="inline-flex min-h-[40px] items-center gap-1.5 rounded-[8px] bg-[#1B2CC1] px-3.5 text-xs font-semibold text-white dark:bg-[#ABD2FA] dark:text-[#1E293B]">
+                        <Link :href="route('instructor.quizzes.create', course.id)" class="inline-flex min-h-[40px] items-center gap-1.5 rounded-[8px] bg-[#1B2CC1] px-3.5 text-xs font-semibold text-white dark:bg-[#ABD2FA] dark:text-[#1E293B]">
                             <Plus class="h-4 w-4" aria-hidden="true" />
                             Buat Kuis / Ujian
-                        </button>
+                        </Link>
                     </div>
                 </div>
 

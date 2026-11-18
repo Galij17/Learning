@@ -192,16 +192,33 @@ Route::middleware(['auth', 'active'])->group(function () {
 
         // Question Bank
         Route::get('/question-bank', [QuestionBankController::class, 'index'])->name('question-bank.index');
+        Route::get('/question-bank/template', [QuestionBankController::class, 'downloadTemplate'])->name('question-bank.template');
+        Route::post('/question-bank/import-preview', [QuestionBankController::class, 'previewImport'])
+            ->middleware('throttle:uploads')
+            ->name('question-bank.import-preview');
+        Route::post('/question-bank/import', [QuestionBankController::class, 'importExcel'])
+            ->middleware('throttle:uploads')
+            ->name('question-bank.import');
+        Route::post('/question-bank/bulk-action', [QuestionBankController::class, 'bulkAction'])->name('question-bank.bulk-action');
         Route::post('/question-bank', [QuestionBankController::class, 'store'])->name('question-bank.store');
+        Route::post('/question-bank/{question}/duplicate', [QuestionBankController::class, 'duplicate'])->name('question-bank.duplicate');
         Route::put('/question-bank/{question}', [QuestionBankController::class, 'update'])->name('question-bank.update');
         Route::delete('/question-bank/{question}', [QuestionBankController::class, 'destroy'])->name('question-bank.destroy');
 
         // Quizzes & Exams
+        Route::get('/courses/{course}/quizzes/create', [InstructorQuizController::class, 'create'])->name('quizzes.create');
         Route::post('/courses/{course}/quizzes', [InstructorQuizController::class, 'store'])->name('quizzes.store');
         Route::get('/courses/{course}/quizzes/{quiz}', [InstructorQuizController::class, 'show'])->name('quizzes.show');
         Route::put('/courses/{course}/quizzes/{quiz}', [InstructorQuizController::class, 'update'])->name('quizzes.update');
         Route::post('/courses/{course}/quizzes/{quiz}/attach-questions', [InstructorQuizController::class, 'attachQuestions'])->name('quizzes.attach-questions');
+        Route::post('/courses/{course}/quizzes/{quiz}/auto-pick', [InstructorQuizController::class, 'autoPickQuestions'])->name('quizzes.auto-pick');
+        Route::post('/courses/{course}/quizzes/{quiz}/clone-questions', [InstructorQuizController::class, 'cloneFromQuiz'])->name('quizzes.clone-questions');
+        Route::post('/courses/{course}/quizzes/{quiz}/import-questions', [InstructorQuizController::class, 'importQuestions'])
+            ->middleware('throttle:uploads')
+            ->name('quizzes.import-questions');
         Route::post('/courses/{course}/quizzes/{quiz}/inline-question', [InstructorQuizController::class, 'createInlineQuestion'])->name('quizzes.inline-question');
+        Route::patch('/courses/{course}/quizzes/{quiz}/questions/{question}/points', [InstructorQuizController::class, 'updateQuestionPoints'])->name('quizzes.question-points');
+        Route::post('/courses/{course}/quizzes/{quiz}/reorder-questions', [InstructorQuizController::class, 'reorderQuestions'])->name('quizzes.reorder-questions');
         Route::delete('/courses/{course}/quizzes/{quiz}/questions/{question}', [InstructorQuizController::class, 'detachQuestion'])->name('quizzes.detach-question');
         Route::post('/courses/{course}/quizzes/{quiz}/attempts/{attempt}/grade-essays', [InstructorQuizController::class, 'gradeEssays'])->name('quizzes.grade-essays');
         Route::delete('/courses/{course}/quizzes/{quiz}', [InstructorQuizController::class, 'destroy'])->name('quizzes.destroy');

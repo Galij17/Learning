@@ -5,16 +5,20 @@ namespace App\Http\Controllers\Instructor;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Instructor\StoreQuestionRequest;
 use App\Http\Requests\Instructor\StoreQuizRequest;
+use App\Models\Category;
 use App\Models\Course;
 use App\Models\Question;
 use App\Models\QuestionOption;
 use App\Models\Quiz;
 use App\Models\QuizAttempt;
+use App\Models\Subject;
 use App\Notifications\QuizPublishedNotification;
 use App\Services\ActivityLogService;
+use App\Services\QuestionSpreadsheetService;
 use App\Services\QuizAttemptService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Notification;
@@ -25,8 +29,31 @@ class QuizController extends Controller
 {
     public function __construct(
         private readonly QuizAttemptService $quizAttemptService,
-        private readonly ActivityLogService $activityLogService
+        private readonly ActivityLogService $activityLogService,
+        private readonly QuestionSpreadsheetService $questionSpreadsheetService,
     ) {}
+
+    public function create(Request $request, Course $course): Response
+    {
+        Gate::authorize('update', $course);
+
+        $course->load(['lessons' => fn ($q) => $q->orderBy('meeting_number')]);
+
+        $bankQuestions = Question::query()
+            ->with(['category:id,name', 'subject:id,name,code', 'options'])
+            ->when(! $request->user()->isAdmin(), fn ($q) => $q->where('created_by', $request->user()->id))
+            ->when($course->subject_id, fn ($q, $subjectId) => $q->orderByRaw('CASE WHEN subject_id = ? THEN 0 ELSE 1 END', [(int) $subjectId]))
+            ->latest()
+            ->limit(300)
+            ->get();
+
+        return Inertia::render('Instructor/Quizzes/Create', [
+            'course' => $course->only(['id', 'title', 'code', 'category_id', 'subject_id']),
+            'lessons' => $course->lessons->map->only(['id', 'title', 'meeting_number']),
+            'bankQuestions' => $bankQuestions,
+            'subjects' => Subject::where('is_active', true)->orderBy('name')->get(['id', 'name', 'code', 'category_id']),
+        ]);
+    }
 
     public function store(StoreQuizRequest $request, Course $course): RedirectResponse
     {
@@ -52,12 +79,52 @@ class QuizController extends Controller
                 'is_published' => $request->boolean('is_published'),
             ]);
 
+            $sortOrder = 0;
+
             if ($request->filled('question_ids')) {
+                $bankQuestions = Question::query()->whereIn('id', $request->input('question_ids', []))->get()->keyBy('id');
                 $syncData = [];
-                foreach ($request->input('question_ids', []) as $idx => $qId) {
-                    $syncData[$qId] = ['sort_order' => $idx + 1];
+                foreach ($request->input('question_ids', []) as $qId) {
+                    if ($q = $bankQuestions->get($qId)) {
+                        $sortOrder++;
+                        $syncData[$qId] = ['sort_order' => $sortOrder, 'points' => $q->points];
+                    }
                 }
-                $quiz->questions()->sync($syncData);
+                if ($syncData !== []) {
+                    $quiz->questions()->syncWithoutDetaching($syncData);
+                }
+            }
+
+            foreach ($request->input('new_questions', []) as $item) {
+                $question = Question::query()->create([
+                    'category_id' => $course->category_id,
+                    'subject_id' => $course->subject_id,
+                    'course_id' => $course->id,
+                    'created_by' => $request->user()->id,
+                    'type' => $item['type'],
+                    'question_text' => $item['question_text'],
+                    'explanation' => $item['explanation'] ?? null,
+                    'points' => (float) $item['points'],
+                    'difficulty' => $item['difficulty'],
+                    'is_bank' => true,
+                ]);
+
+                if ($question->type !== 'essay') {
+                    foreach ($item['options'] ?? [] as $idx => $opt) {
+                        QuestionOption::query()->create([
+                            'question_id' => $question->id,
+                            'option_text' => $opt['option_text'],
+                            'is_correct' => (bool) ($opt['is_correct'] ?? false),
+                            'sort_order' => $idx + 1,
+                        ]);
+                    }
+                }
+
+                $sortOrder++;
+                $quiz->questions()->attach($question->id, [
+                    'sort_order' => $sortOrder,
+                    'points' => $question->points,
+                ]);
             }
 
             return $quiz;
@@ -90,13 +157,30 @@ class QuizController extends Controller
             ->latest('started_at')
             ->paginate(15);
 
+        $attachedIds = $quiz->questions->pluck('id');
+
         $bankQuestions = Question::query()
-            ->with(['category:id,name', 'subject:id,name', 'options'])
+            ->with(['category:id,name', 'subject:id,name,code', 'options'])
             ->when(! $request->user()->isAdmin(), fn ($q) => $q->where('created_by', $request->user()->id))
-            ->whereNotIn('id', $quiz->questions->pluck('id'))
+            ->whereNotIn('id', $attachedIds)
+            ->when($course->subject_id, fn ($q, $subjectId) => $q->orderByRaw('CASE WHEN subject_id = ? THEN 0 ELSE 1 END', [(int) $subjectId]))
+            ->latest()
+            ->limit(300)
+            ->get();
+
+        $otherQuizzes = Quiz::query()
+            ->whereKeyNot($quiz->id)
+            ->whereHas('course')
+            ->whereHas('questions')
+            ->with('course:id,title,code,instructor_id')
+            ->withCount('questions')
+            ->when(
+                ! $request->user()->isAdmin(),
+                fn ($q) => $q->whereHas('course', fn ($c) => $c->where('instructor_id', $request->user()->id))
+            )
             ->latest()
             ->limit(50)
-            ->get();
+            ->get(['id', 'course_id', 'title', 'type']);
 
         $analytics = [
             'total_attempts' => QuizAttempt::where('quiz_id', $quiz->id)->count(),
@@ -110,6 +194,9 @@ class QuizController extends Controller
             'quiz' => $quiz,
             'attempts' => $attempts,
             'bankQuestions' => $bankQuestions,
+            'subjects' => Subject::where('is_active', true)->orderBy('name')->get(['id', 'name', 'code', 'category_id']),
+            'categories' => Category::where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'otherQuizzes' => $otherQuizzes,
             'analytics' => $analytics,
         ]);
     }
@@ -166,15 +253,118 @@ class QuizController extends Controller
             abort_unless($allowedCount === count(array_unique($validated['question_ids'])), 403, 'Sebagian soal tidak dapat diakses.');
         }
 
-        $currentCount = $quiz->questions()->count();
-        $attachData = [];
-        foreach ($validated['question_ids'] as $idx => $qId) {
-            $attachData[$qId] = ['sort_order' => $currentCount + $idx + 1];
+        $questions = Question::query()->whereIn('id', $validated['question_ids'])->get();
+        $this->attachQuestionsOrdered($quiz, $questions);
+
+        return back()->with('success', count($validated['question_ids']) . ' soal dari bank soal berhasil ditambahkan ke kuis/ujian.');
+    }
+
+    public function autoPickQuestions(Request $request, Course $course, Quiz $quiz): RedirectResponse
+    {
+        abort_unless((int) $quiz->course_id === (int) $course->id, 404);
+        Gate::authorize('manage', $quiz);
+
+        $validated = $request->validate([
+            'count' => ['required', 'integer', 'min:1', 'max:100'],
+            'subject_id' => ['nullable', 'integer', 'exists:subjects,id'],
+            'type' => ['nullable', 'in:multiple_choice,true_false,essay'],
+            'difficulty' => ['nullable', 'in:easy,medium,hard'],
+        ]);
+
+        $attachedIds = $quiz->questions()->pluck('questions.id');
+
+        $picked = Question::query()
+            ->when(! $request->user()->isAdmin(), fn ($q) => $q->where('created_by', $request->user()->id))
+            ->whereNotIn('id', $attachedIds)
+            ->when($validated['subject_id'] ?? null, fn ($q, $sId) => $q->where('subject_id', $sId))
+            ->when($validated['type'] ?? null, fn ($q, $type) => $q->where('type', $type))
+            ->when($validated['difficulty'] ?? null, fn ($q, $diff) => $q->where('difficulty', $diff))
+            ->inRandomOrder()
+            ->limit((int) $validated['count'])
+            ->get();
+
+        if ($picked->isEmpty()) {
+            return back()->with('error', 'Tidak ada soal yang cocok atau belum terpasang untuk kriteria tersebut.');
         }
 
-        $quiz->questions()->syncWithoutDetaching($attachData);
+        $this->attachQuestionsOrdered($quiz, $picked);
 
-        return back()->with('success', 'Soal dari bank soal berhasil ditambahkan ke kuis/ujian.');
+        $added = $picked->count();
+        $msg = $added < (int) $validated['count']
+            ? "{$added} soal acak ditambahkan (stok bank soal yang cocok tersisa {$added})."
+            : "{$added} soal acak berhasil ditambahkan ke kuis/ujian.";
+
+        return back()->with('success', $msg);
+    }
+
+    public function cloneFromQuiz(Request $request, Course $course, Quiz $quiz): RedirectResponse
+    {
+        abort_unless((int) $quiz->course_id === (int) $course->id, 404);
+        Gate::authorize('manage', $quiz);
+
+        $validated = $request->validate([
+            'source_quiz_id' => ['required', 'integer', 'exists:quizzes,id'],
+        ]);
+
+        $sourceQuiz = Quiz::query()->with('questions')->findOrFail($validated['source_quiz_id']);
+        Gate::authorize('manage', $sourceQuiz);
+
+        $existingIds = $quiz->questions()->pluck('questions.id')->all();
+        $toAttach = $sourceQuiz->questions->reject(fn (Question $q) => in_array($q->id, $existingIds, true));
+
+        if ($toAttach->isEmpty()) {
+            return back()->with('error', 'Seluruh soal dari kuis sumber sudah ada di kuis ini atau kuis sumber kosong.');
+        }
+
+        $this->attachQuestionsOrdered($quiz, $toAttach);
+
+        return back()->with('success', "{$toAttach->count()} soal berhasil disalin dari \"{$sourceQuiz->title}\".");
+    }
+
+    public function importQuestions(Request $request, Course $course, Quiz $quiz): RedirectResponse
+    {
+        abort_unless((int) $quiz->course_id === (int) $course->id, 404);
+        Gate::authorize('manage', $quiz);
+
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'mimes:xlsx', 'max:5120'],
+            'save_to_bank' => ['boolean'],
+        ]);
+
+        $result = $this->questionSpreadsheetService->importFromUploadedFile(
+            $request->file('file'),
+            $request->user(),
+            $course->category_id,
+            $course->subject_id,
+            $course,
+            $quiz,
+            (bool) ($validated['save_to_bank'] ?? true),
+        );
+
+        return back()->with('success', "{$result['imported_count']} soal dari file Excel berhasil ditambahkan ke kuis ini.");
+    }
+
+    /**
+     * @param  Collection<int, Question>  $questions
+     */
+    private function attachQuestionsOrdered(Quiz $quiz, Collection $questions): void
+    {
+        if ($questions->isEmpty()) {
+            return;
+        }
+
+        DB::transaction(function () use ($quiz, $questions) {
+            $currentCount = $quiz->questions()->count();
+            $attachData = [];
+            foreach ($questions->values() as $idx => $question) {
+                $attachData[$question->id] = [
+                    'sort_order' => $currentCount + $idx + 1,
+                    'points' => $question->points,
+                ];
+            }
+
+            $quiz->questions()->syncWithoutDetaching($attachData);
+        });
     }
 
     public function createInlineQuestion(StoreQuestionRequest $request, Course $course, Quiz $quiz): RedirectResponse
@@ -224,6 +414,45 @@ class QuizController extends Controller
         $quiz->questions()->detach($question->id);
 
         return back()->with('success', 'Soal dilepas dari kuis/ujian.');
+    }
+
+    public function updateQuestionPoints(Request $request, Course $course, Quiz $quiz, Question $question): RedirectResponse
+    {
+        abort_unless((int) $quiz->course_id === (int) $course->id, 404);
+        Gate::authorize('manage', $quiz);
+        abort_unless($quiz->questions()->where('questions.id', $question->id)->exists(), 404);
+
+        $validated = $request->validate([
+            'points' => ['required', 'numeric', 'min:1', 'max:500'],
+        ]);
+
+        $quiz->questions()->updateExistingPivot($question->id, [
+            'points' => round((float) $validated['points'], 2),
+        ]);
+
+        return back()->with('success', 'Bobot poin soal pada kuis ini diperbarui.');
+    }
+
+    public function reorderQuestions(Request $request, Course $course, Quiz $quiz): RedirectResponse
+    {
+        abort_unless((int) $quiz->course_id === (int) $course->id, 404);
+        Gate::authorize('manage', $quiz);
+
+        $validated = $request->validate([
+            'question_ids' => ['required', 'array', 'min:1'],
+            'question_ids.*' => ['integer', 'exists:questions,id'],
+        ]);
+
+        $attachedIds = $quiz->questions()->pluck('questions.id')->all();
+        $orderedIds = array_values(array_intersect($validated['question_ids'], $attachedIds));
+
+        DB::transaction(function () use ($quiz, $orderedIds) {
+            foreach ($orderedIds as $idx => $qId) {
+                $quiz->questions()->updateExistingPivot($qId, ['sort_order' => $idx + 1]);
+            }
+        });
+
+        return back()->with('success', 'Urutan soal diperbarui.');
     }
 
     public function gradeEssays(Request $request, Course $course, Quiz $quiz, QuizAttempt $attempt): RedirectResponse

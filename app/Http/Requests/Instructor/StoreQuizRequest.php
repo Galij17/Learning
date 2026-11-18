@@ -41,6 +41,15 @@ class StoreQuizRequest extends FormRequest
                 'integer',
                 Rule::exists('questions', 'id')->whereNull('deleted_at'),
             ],
+            'new_questions' => ['nullable', 'array', 'max:100'],
+            'new_questions.*.type' => ['required', 'in:multiple_choice,true_false,essay'],
+            'new_questions.*.question_text' => ['required', 'string', 'max:10000'],
+            'new_questions.*.explanation' => ['nullable', 'string', 'max:5000'],
+            'new_questions.*.points' => ['required', 'numeric', 'min:1', 'max:500'],
+            'new_questions.*.difficulty' => ['required', 'in:easy,medium,hard'],
+            'new_questions.*.options' => ['nullable', 'array'],
+            'new_questions.*.options.*.option_text' => ['required_with:new_questions.*.options', 'string', 'max:2000'],
+            'new_questions.*.options.*.is_correct' => ['boolean'],
         ];
     }
 

@@ -11,6 +11,7 @@ use App\Models\Material;
 use App\Models\Question;
 use App\Models\Quiz;
 use App\Models\Role;
+use App\Models\Subject;
 use App\Models\Submission;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
@@ -205,5 +206,275 @@ class InstructorCourseWorkflowTest extends TestCase
         $res->assertOk();
         $res->assertSee('SharedKeywordPemrograman Saya');
         $res->assertDontSee('SharedKeywordPemrograman Orang Lain');
+    }
+
+    public function test_question_bank_supports_subject_directory_counts_and_unassigned_filtering(): void
+    {
+        $subject = Subject::create([
+            'category_id' => $this->category->id,
+            'code' => 'IF-404',
+            'name' => 'Arsitektur Perangkat Lunak',
+            'is_active' => true,
+        ]);
+
+        Question::create([
+            'category_id' => $this->category->id,
+            'subject_id' => $subject->id,
+            'created_by' => $this->instructor->id,
+            'type' => 'essay',
+            'question_text' => 'Soal khusus mapel IF-404.',
+            'points' => 10,
+            'difficulty' => 'medium',
+        ]);
+
+        Question::create([
+            'category_id' => $this->category->id,
+            'subject_id' => null,
+            'created_by' => $this->instructor->id,
+            'type' => 'essay',
+            'question_text' => 'Soal umum tanpa mapel.',
+            'points' => 10,
+            'difficulty' => 'easy',
+        ]);
+
+        $this->actingAs($this->instructor)
+            ->get("/instructor/question-bank?subject_id={$subject->id}")
+            ->assertOk()
+            ->assertSee('Soal khusus mapel IF-404.')
+            ->assertDontSee('Soal umum tanpa mapel.');
+
+        $this->actingAs($this->instructor)
+            ->get('/instructor/question-bank?subject_id=unassigned')
+            ->assertOk()
+            ->assertSee('Soal umum tanpa mapel.')
+            ->assertDontSee('Soal khusus mapel IF-404.');
+    }
+
+    public function test_instructor_can_download_xlsx_template_import_questions_auto_pick_and_clone_quizzes(): void
+    {
+        $subject = Subject::create([
+            'category_id' => $this->category->id,
+            'code' => 'IF-501',
+            'name' => 'Rekayasa Data',
+            'is_active' => true,
+        ]);
+
+        $course = Course::create([
+            'category_id' => $this->category->id,
+            'subject_id' => $subject->id,
+            'instructor_id' => $this->instructor->id,
+            'title' => 'Rekayasa Data A',
+            'slug' => 'rekayasa-data-a',
+            'code' => 'RD101',
+            'status' => 'published',
+        ]);
+
+        $quizA = Quiz::create([
+            'course_id' => $course->id,
+            'created_by' => $this->instructor->id,
+            'title' => 'Kuis 1',
+            'type' => 'quiz',
+            'duration_minutes' => 30,
+            'max_attempts' => 1,
+            'passing_score' => 70,
+        ]);
+
+        $quizB = Quiz::create([
+            'course_id' => $course->id,
+            'created_by' => $this->instructor->id,
+            'title' => 'Kuis 2 Paralel',
+            'type' => 'quiz',
+            'duration_minutes' => 30,
+            'max_attempts' => 1,
+            'passing_score' => 70,
+        ]);
+
+        // 1. Download template returns valid .xlsx streamed download
+        $templateRes = $this->actingAs($this->instructor)->get('/instructor/question-bank/template');
+        $templateRes->assertOk();
+        $this->assertStringContainsString('spreadsheetml.sheet', (string) $templateRes->headers->get('Content-Type'));
+        $xlsxBinary = $templateRes->streamedContent();
+        $this->assertNotEmpty($xlsxBinary);
+
+        // Save streamed template bytes to temp UploadedFile -> verify template itself imports cleanly!
+        $tempPath = tempnam(sys_get_temp_dir(), 'tmpl_') . '.xlsx';
+        file_put_contents($tempPath, $xlsxBinary);
+        $uploaded = new UploadedFile(
+            $tempPath,
+            'template-soal.xlsx',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            null,
+            true
+        );
+
+        try {
+            // 2. Import template rows directly into Question Bank for the chosen subject
+            $this->actingAs($this->instructor)
+                ->post('/instructor/question-bank/import', [
+                    'file' => $uploaded,
+                    'category_id' => $this->category->id,
+                    'subject_id' => $subject->id,
+                ])
+                ->assertRedirect();
+
+            $this->assertSame(3, Question::where('subject_id', $subject->id)->where('created_by', $this->instructor->id)->count());
+
+            // 3. Auto-pick 2 random questions from that subject into Quiz A
+            $this->actingAs($this->instructor)
+                ->post("/instructor/courses/{$course->id}/quizzes/{$quizA->id}/auto-pick", [
+                    'count' => 2,
+                    'subject_id' => $subject->id,
+                ])
+                ->assertRedirect();
+
+            $this->assertSame(2, $quizA->questions()->count());
+
+            // 4. Clone all questions from Quiz A into Quiz B
+            $this->actingAs($this->instructor)
+                ->post("/instructor/courses/{$course->id}/quizzes/{$quizB->id}/clone-questions", [
+                    'source_quiz_id' => $quizA->id,
+                ])
+                ->assertRedirect();
+
+            $this->assertSame(2, $quizB->questions()->count());
+
+            // 5. Cross-instructor clone attempt must be forbidden
+            $foreignCourse = Course::create([
+                'category_id' => $this->category->id,
+                'instructor_id' => $this->otherInstructor->id,
+                'title' => 'Kelas Asing',
+                'slug' => 'kelas-asing',
+                'code' => 'KA999',
+                'status' => 'published',
+            ]);
+            $foreignQuiz = Quiz::create([
+                'course_id' => $foreignCourse->id,
+                'created_by' => $this->otherInstructor->id,
+                'title' => 'Ujian Asing',
+                'type' => 'quiz',
+                'duration_minutes' => 20,
+                'max_attempts' => 1,
+                'passing_score' => 70,
+            ]);
+
+            $this->actingAs($this->instructor)
+                ->post("/instructor/courses/{$course->id}/quizzes/{$quizB->id}/clone-questions", [
+                    'source_quiz_id' => $foreignQuiz->id,
+                ])
+                ->assertForbidden();
+        } finally {
+            @unlink($tempPath);
+        }
+    }
+
+    public function test_quiz_wizard_reorder_points_override_excel_preview_duplicate_and_bulk_actions(): void
+    {
+        $subjA = Subject::create(['category_id' => $this->category->id, 'code' => 'IF-101', 'name' => 'Dasar', 'is_active' => true]);
+        $subjB = Subject::create(['category_id' => $this->category->id, 'code' => 'IF-102', 'name' => 'Lanjut', 'is_active' => true]);
+
+        $course = Course::create([
+            'category_id' => $this->category->id,
+            'subject_id' => $subjA->id,
+            'instructor_id' => $this->instructor->id,
+            'title' => 'Kelas Wizard',
+            'slug' => 'kelas-wizard',
+            'code' => 'KW101',
+            'status' => 'published',
+        ]);
+
+        // 1. Wizard create page renders
+        $this->actingAs($this->instructor)->get("/instructor/courses/{$course->id}/quizzes/create")->assertOk();
+
+        // Create 1 existing bank question
+        $bankQ = Question::create([
+            'category_id' => $this->category->id,
+            'subject_id' => $subjA->id,
+            'created_by' => $this->instructor->id,
+            'type' => 'essay',
+            'question_text' => 'Soal Bank Asli',
+            'points' => 10,
+            'difficulty' => 'easy',
+        ]);
+
+        // 2. Store quiz via wizard payload (existing bank question + new inline question)
+        $this->actingAs($this->instructor)
+            ->post("/instructor/courses/{$course->id}/quizzes", [
+                'title' => 'Kuis Wizard 3 Langkah',
+                'type' => 'quiz',
+                'duration_minutes' => 25,
+                'max_attempts' => 2,
+                'passing_score' => 70,
+                'is_published' => false,
+                'question_ids' => [$bankQ->id],
+                'new_questions' => [
+                    [
+                        'type' => 'essay',
+                        'question_text' => 'Soal Baru Dari Wizard',
+                        'points' => 15,
+                        'difficulty' => 'medium',
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $quiz = Quiz::where('title', 'Kuis Wizard 3 Langkah')->firstOrFail();
+        $this->assertFalse($quiz->is_published);
+        $this->assertSame(2, $quiz->questions()->count());
+
+        $secondQ = $quiz->questions()->where('question_text', 'Soal Baru Dari Wizard')->firstOrFail();
+
+        // 3. Reorder questions (put secondQ first) & override points per quiz
+        $this->actingAs($this->instructor)
+            ->post("/instructor/courses/{$course->id}/quizzes/{$quiz->id}/reorder-questions", [
+                'question_ids' => [$secondQ->id, $bankQ->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertSame($secondQ->id, $quiz->questions()->first()->id);
+
+        $this->actingAs($this->instructor)
+            ->patch("/instructor/courses/{$course->id}/quizzes/{$quiz->id}/questions/{$bankQ->id}/points", [
+                'points' => 35,
+            ])
+            ->assertRedirect();
+
+        $this->assertEquals(35.0, (float) $quiz->questions()->where('questions.id', $bankQ->id)->first()->pivot->points);
+        $this->assertEquals(10.0, (float) $bankQ->fresh()->points);
+
+        // 4. Duplicate & bulk move subject + bulk delete in Question Bank
+        $this->actingAs($this->instructor)->post("/instructor/question-bank/{$bankQ->id}/duplicate")->assertRedirect();
+        $copy = Question::where('question_text', 'Soal Bank Asli (Salinan)')->firstOrFail();
+
+        $this->actingAs($this->instructor)
+            ->post('/instructor/question-bank/bulk-action', [
+                'action' => 'move_subject',
+                'question_ids' => [$copy->id],
+                'subject_id' => $subjB->id,
+            ])
+            ->assertRedirect();
+        $this->assertSame($subjB->id, $copy->fresh()->subject_id);
+
+        $this->actingAs($this->instructor)
+            ->post('/instructor/question-bank/bulk-action', [
+                'action' => 'delete',
+                'question_ids' => [$copy->id],
+            ])
+            ->assertRedirect();
+        $this->assertSoftDeleted('questions', ['id' => $copy->id]);
+
+        // 5. Excel preview endpoint returns JSON preview without persisting
+        $templateRes = $this->actingAs($this->instructor)->get('/instructor/question-bank/template');
+        $tempPath = tempnam(sys_get_temp_dir(), 'prev_') . '.xlsx';
+        file_put_contents($tempPath, $templateRes->streamedContent());
+        $uploaded = new UploadedFile($tempPath, 'preview.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
+        try {
+            $this->actingAs($this->instructor)
+                ->postJson('/instructor/question-bank/import-preview', ['file' => $uploaded])
+                ->assertOk()
+                ->assertJsonPath('valid_count', 3)
+                ->assertJsonPath('error_count', 0);
+        } finally {
+            @unlink($tempPath);
+        }
     }
 }
