@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\SaveSubjectRequest;
 use App\Models\Category;
 use App\Models\Subject;
 use App\Services\ActivityLogService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -36,15 +36,9 @@ class SubjectController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(SaveSubjectRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'category_id' => ['required', 'exists:categories,id'],
-            'code' => ['required', 'string', 'max:40', 'unique:subjects,code'],
-            'name' => ['required', 'string', 'max:150'],
-            'description' => ['nullable', 'string', 'max:1000'],
-            'is_active' => ['boolean'],
-        ]);
+        $validated = $request->validated();
 
         $subject = Subject::query()->create([
             ...$validated,
@@ -57,15 +51,9 @@ class SubjectController extends Controller
         return back()->with('success', 'Mata pelajaran berhasil ditambahkan.');
     }
 
-    public function update(Request $request, Subject $subject): RedirectResponse
+    public function update(SaveSubjectRequest $request, Subject $subject): RedirectResponse
     {
-        $validated = $request->validate([
-            'category_id' => ['required', 'exists:categories,id'],
-            'code' => ['required', 'string', 'max:40', Rule::unique('subjects', 'code')->ignore($subject->id)],
-            'name' => ['required', 'string', 'max:150'],
-            'description' => ['nullable', 'string', 'max:1000'],
-            'is_active' => ['boolean'],
-        ]);
+        $validated = $request->validated();
 
         $subject->update([
             ...$validated,

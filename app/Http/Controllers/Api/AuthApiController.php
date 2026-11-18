@@ -7,7 +7,7 @@ use App\Models\Role;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\ActivityLogService;
-use App\Support\ApiPayloadMapper;
+use App\Http\Resources\UserResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -52,7 +52,7 @@ class AuthApiController extends Controller
 
         return response()->json([
             'token' => $token,
-            'user' => ApiPayloadMapper::user($user),
+            'user' => (new UserResource($user))->resolve(),
         ]);
     }
 
@@ -93,14 +93,14 @@ class AuthApiController extends Controller
 
         return response()->json([
             'token' => $token,
-            'user' => ApiPayloadMapper::user($user),
+            'user' => (new UserResource($user))->resolve(),
         ], 201);
     }
 
     public function user(Request $request): JsonResponse
     {
         return response()->json([
-            'user' => ApiPayloadMapper::user($request->user()),
+            'user' => (new UserResource($request->user()))->resolve(),
         ]);
     }
 

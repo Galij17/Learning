@@ -13,7 +13,11 @@ use App\Models\Submission;
 use App\Services\ActivityLogService;
 use App\Services\FileStorageService;
 use App\Services\ReportExportService;
-use App\Support\ApiPayloadMapper;
+use App\Http\Resources\CertificateResource;
+use App\Http\Resources\CommentResource;
+use App\Http\Resources\DiscussionResource;
+use App\Http\Resources\NotificationResource;
+use App\Http\Resources\UserResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
@@ -55,7 +59,7 @@ class SharedApiController extends Controller
         ])->save();
 
         return response()->json([
-            'user' => ApiPayloadMapper::user($user->fresh()),
+            'user' => (new UserResource($user->fresh()))->resolve(),
         ]);
     }
 
@@ -86,7 +90,7 @@ class SharedApiController extends Controller
             ->latest()
             ->limit(50)
             ->get()
-            ->map(fn ($n) => ApiPayloadMapper::notification($n))
+            ->map(fn ($n) => (new NotificationResource($n))->resolve())
             ->values();
 
         return response()->json(['data' => $items]);
@@ -121,7 +125,7 @@ class SharedApiController extends Controller
             ->where('student_id', $request->user()->id)
             ->latest('issued_at')
             ->get()
-            ->map(fn (Certificate $c) => ApiPayloadMapper::certificate($c))
+            ->map(fn (Certificate $c) => (new CertificateResource($c))->resolve())
             ->values();
 
         return response()->json(['data' => $items]);
@@ -131,7 +135,7 @@ class SharedApiController extends Controller
     {
         Gate::authorize('view', $certificate);
 
-        return response()->json(['data' => ApiPayloadMapper::certificate($certificate)]);
+        return response()->json(['data' => (new CertificateResource($certificate))->resolve()]);
     }
 
     public function certificateDownload(Certificate $certificate): HttpResponse
@@ -148,7 +152,7 @@ class SharedApiController extends Controller
             return response()->json(['message' => 'Sertifikat tidak ditemukan.'], 404);
         }
 
-        return response()->json(['data' => ApiPayloadMapper::certificate($certificate)]);
+        return response()->json(['data' => (new CertificateResource($certificate))->resolve()]);
     }
 
     public function discussionsIndex(Course $course): JsonResponse
@@ -158,7 +162,7 @@ class SharedApiController extends Controller
         $items = $course->discussions()
             ->withCount('allComments')
             ->get()
-            ->map(fn (Discussion $d) => ApiPayloadMapper::discussion($d))
+            ->map(fn (Discussion $d) => (new DiscussionResource($d))->resolve())
             ->values();
 
         return response()->json(['data' => $items]);
@@ -182,7 +186,7 @@ class SharedApiController extends Controller
 
         $this->activityLogService->log('discussion.created', "Membuat topik diskusi: {$discussion->title}", $discussion);
 
-        return response()->json(['data' => ApiPayloadMapper::discussion($discussion)], 201);
+        return response()->json(['data' => (new DiscussionResource($discussion))->resolve()], 201);
     }
 
     public function discussionsShow(Course $course, Discussion $discussion): JsonResponse
@@ -190,7 +194,7 @@ class SharedApiController extends Controller
         abort_unless((int) $discussion->course_id === (int) $course->id, 404);
         Gate::authorize('view', $discussion);
 
-        return response()->json(['data' => ApiPayloadMapper::discussion($discussion, true)]);
+        return response()->json(['data' => (new DiscussionResource($discussion, true))->resolve()]);
     }
 
     public function discussionsComment(Request $request, Course $course, Discussion $discussion): JsonResponse
@@ -217,7 +221,7 @@ class SharedApiController extends Controller
             'body' => trim($validated['body']),
         ]);
 
-        return response()->json(['data' => ApiPayloadMapper::comment($comment)], 201);
+        return response()->json(['data' => (new CommentResource($comment))->resolve()], 201);
     }
 
     public function materialDownload(Request $request, Material $material): StreamedResponse

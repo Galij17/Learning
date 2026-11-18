@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\ResetUserPasswordRequest;
 use App\Http\Requests\Admin\StoreUserRequest;
 use App\Http\Requests\Admin\UpdateUserRequest;
 use App\Models\Role;
@@ -12,7 +13,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -132,11 +132,9 @@ class UserController extends Controller
         return back()->with('success', 'Status aktivasi akun berhasil diubah.');
     }
 
-    public function resetPassword(Request $request, User $user): RedirectResponse
+    public function resetPassword(ResetUserPasswordRequest $request, User $user): RedirectResponse
     {
-        $validated = $request->validate([
-            'password' => ['required', 'confirmed', Password::min(8)->letters()->numbers()],
-        ]);
+        $validated = $request->validated();
 
         $user->update(['password' => Hash::make($validated['password'])]);
         $user->tokens()->delete();

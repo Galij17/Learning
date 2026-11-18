@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\SaveCategoryRequest;
 use App\Models\Category;
 use App\Services\ActivityLogService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -31,13 +31,9 @@ class CategoryController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(SaveCategoryRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:120', 'unique:categories,name'],
-            'description' => ['nullable', 'string', 'max:1000'],
-            'is_active' => ['boolean'],
-        ]);
+        $validated = $request->validated();
 
         $category = Category::query()->create([
             ...$validated,
@@ -50,13 +46,9 @@ class CategoryController extends Controller
         return back()->with('success', 'Kategori berhasil ditambahkan.');
     }
 
-    public function update(Request $request, Category $category): RedirectResponse
+    public function update(SaveCategoryRequest $request, Category $category): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:120', Rule::unique('categories', 'name')->ignore($category->id)],
-            'description' => ['nullable', 'string', 'max:1000'],
-            'is_active' => ['boolean'],
-        ]);
+        $validated = $request->validated();
 
         $category->update([
             ...$validated,

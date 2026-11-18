@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\SaveAnnouncementRequest;
 use App\Models\Announcement;
 use App\Models\User;
 use App\Notifications\AnnouncementPublishedNotification;
 use App\Services\ActivityLogService;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Notification;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -31,13 +31,9 @@ class AnnouncementController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(SaveAnnouncementRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'title' => ['required', 'string', 'max:180'],
-            'content' => ['required', 'string', 'max:10000'],
-            'is_pinned' => ['boolean'],
-        ]);
+        $validated = $request->validated();
 
         $announcement = Announcement::query()->create([
             'course_id' => null,
@@ -56,15 +52,11 @@ class AnnouncementController extends Controller
         return back()->with('success', 'Pengumuman global berhasil diterbitkan dan notifikasi terkirim.');
     }
 
-    public function update(Request $request, Announcement $announcement): RedirectResponse
+    public function update(SaveAnnouncementRequest $request, Announcement $announcement): RedirectResponse
     {
         abort_unless($announcement->course_id === null, 404);
 
-        $validated = $request->validate([
-            'title' => ['required', 'string', 'max:180'],
-            'content' => ['required', 'string', 'max:10000'],
-            'is_pinned' => ['boolean'],
-        ]);
+        $validated = $request->validated();
 
         $announcement->update([
             'title' => $validated['title'],

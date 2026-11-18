@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\SaveAdminCourseRequest;
 use App\Models\AcademicPeriod;
 use App\Models\Category;
 use App\Models\Course;
@@ -49,17 +50,9 @@ class CourseManagementController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(SaveAdminCourseRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'title' => ['required', 'string', 'max:180'],
-            'category_id' => ['required', 'exists:categories,id'],
-            'subject_id' => ['nullable', 'exists:subjects,id'],
-            'academic_period_id' => ['nullable', 'exists:academic_periods,id'],
-            'instructor_id' => ['required', 'exists:users,id,deleted_at,NULL'],
-            'description' => ['nullable', 'string', 'max:5000'],
-            'status' => ['required', 'in:draft,published,archived'],
-        ]);
+        $validated = $request->validated();
 
         $instructorValid = User::query()
             ->whereKey($validated['instructor_id'])
@@ -81,17 +74,9 @@ class CourseManagementController extends Controller
         return back()->with('success', "Kelas {$course->title} berhasil dibuat dengan kode {$course->code}.");
     }
 
-    public function update(Request $request, Course $course): RedirectResponse
+    public function update(SaveAdminCourseRequest $request, Course $course): RedirectResponse
     {
-        $validated = $request->validate([
-            'title' => ['required', 'string', 'max:180'],
-            'category_id' => ['required', 'exists:categories,id'],
-            'subject_id' => ['nullable', 'exists:subjects,id'],
-            'academic_period_id' => ['nullable', 'exists:academic_periods,id'],
-            'instructor_id' => ['required', 'exists:users,id,deleted_at,NULL'],
-            'description' => ['nullable', 'string', 'max:5000'],
-            'status' => ['required', 'in:draft,published,archived'],
-        ]);
+        $validated = $request->validated();
 
         $instructorValid = User::query()
             ->whereKey($validated['instructor_id'])

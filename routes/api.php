@@ -1,10 +1,24 @@
 <?php
 
-use App\Http\Controllers\Api\AdminApiController;
+use App\Http\Controllers\Api\Admin\AnnouncementController as AdminAnnouncementController;
+use App\Http\Controllers\Api\Admin\CourseController as AdminCourseController;
+use App\Http\Controllers\Api\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Api\Admin\ReportController as AdminReportController;
+use App\Http\Controllers\Api\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\AuthApiController;
-use App\Http\Controllers\Api\InstructorApiController;
+use App\Http\Controllers\Api\Instructor\AssignmentController as InstructorAssignmentController;
+use App\Http\Controllers\Api\Instructor\CourseController as InstructorCourseController;
+use App\Http\Controllers\Api\Instructor\DashboardController as InstructorDashboardController;
+use App\Http\Controllers\Api\Instructor\GradebookController as InstructorGradebookController;
+use App\Http\Controllers\Api\Instructor\LessonMaterialController as InstructorLessonMaterialController;
+use App\Http\Controllers\Api\Instructor\QuestionBankController as InstructorQuestionBankController;
+use App\Http\Controllers\Api\Instructor\QuizController as InstructorQuizController;
 use App\Http\Controllers\Api\SharedApiController;
-use App\Http\Controllers\Api\StudentApiController;
+use App\Http\Controllers\Api\Student\AssignmentController as StudentAssignmentController;
+use App\Http\Controllers\Api\Student\CourseController as StudentCourseController;
+use App\Http\Controllers\Api\Student\DashboardController as StudentDashboardController;
+use App\Http\Controllers\Api\Student\GradeController as StudentGradeController;
+use App\Http\Controllers\Api\Student\QuizController as StudentQuizController;
 use Illuminate\Support\Facades\Route;
 
 // Public Auth & Certificate Verification
@@ -42,78 +56,78 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 
     // Student Module
     Route::prefix('student')->middleware('role:student,admin')->group(function () {
-        Route::get('/dashboard', [StudentApiController::class, 'dashboard']);
-        Route::get('/courses', [StudentApiController::class, 'courses']);
-        Route::post('/courses/join', [StudentApiController::class, 'joinCourse']);
-        Route::get('/courses/{course}', [StudentApiController::class, 'courseDetail']);
-        Route::post('/courses/{course}/materials/{material}/complete', [StudentApiController::class, 'completeMaterial']);
+        Route::get('/dashboard', [StudentDashboardController::class, 'dashboard']);
+        Route::get('/courses', [StudentCourseController::class, 'courses']);
+        Route::post('/courses/join', [StudentCourseController::class, 'joinCourse']);
+        Route::get('/courses/{course}', [StudentCourseController::class, 'courseDetail']);
+        Route::post('/courses/{course}/materials/{material}/complete', [StudentCourseController::class, 'completeMaterial']);
 
-        Route::get('/assignments', [StudentApiController::class, 'assignments']);
-        Route::get('/courses/{course}/assignments/{assignment}', [StudentApiController::class, 'assignmentDetail']);
-        Route::post('/courses/{course}/assignments/{assignment}/submit', [StudentApiController::class, 'submitAssignment'])
+        Route::get('/assignments', [StudentAssignmentController::class, 'assignments']);
+        Route::get('/courses/{course}/assignments/{assignment}', [StudentAssignmentController::class, 'assignmentDetail']);
+        Route::post('/courses/{course}/assignments/{assignment}/submit', [StudentAssignmentController::class, 'submitAssignment'])
             ->middleware('throttle:uploads');
 
-        Route::get('/courses/{course}/quizzes/{quiz}', [StudentApiController::class, 'quizDetail']);
-        Route::post('/courses/{course}/quizzes/{quiz}/start', [StudentApiController::class, 'startQuiz']);
-        Route::post('/courses/{course}/quizzes/{quiz}/attempts/{attempt}/autosave', [StudentApiController::class, 'autosaveQuiz'])
+        Route::get('/courses/{course}/quizzes/{quiz}', [StudentQuizController::class, 'quizDetail']);
+        Route::post('/courses/{course}/quizzes/{quiz}/start', [StudentQuizController::class, 'startQuiz']);
+        Route::post('/courses/{course}/quizzes/{quiz}/attempts/{attempt}/autosave', [StudentQuizController::class, 'autosaveQuiz'])
             ->middleware('throttle:exam-autosave');
-        Route::post('/courses/{course}/quizzes/{quiz}/attempts/{attempt}/submit', [StudentApiController::class, 'submitQuiz']);
-        Route::get('/courses/{course}/quizzes/{quiz}/attempts/{attempt}/result', [StudentApiController::class, 'quizResult']);
+        Route::post('/courses/{course}/quizzes/{quiz}/attempts/{attempt}/submit', [StudentQuizController::class, 'submitQuiz']);
+        Route::get('/courses/{course}/quizzes/{quiz}/attempts/{attempt}/result', [StudentQuizController::class, 'quizResult']);
 
-        Route::get('/grades', [StudentApiController::class, 'grades']);
-        Route::get('/gamification', [StudentApiController::class, 'gamification']);
-        Route::get('/leaderboard', [StudentApiController::class, 'leaderboard']);
+        Route::get('/grades', [StudentGradeController::class, 'grades']);
+        Route::get('/gamification', [StudentGradeController::class, 'gamification']);
+        Route::get('/leaderboard', [StudentGradeController::class, 'leaderboard']);
     });
 
     // Instructor / Teacher Module
     Route::prefix('instructor')->middleware('role:instructor,admin')->group(function () {
-        Route::get('/dashboard', [InstructorApiController::class, 'dashboard']);
-        Route::get('/courses', [InstructorApiController::class, 'courses']);
-        Route::post('/courses', [InstructorApiController::class, 'storeCourse']);
-        Route::get('/courses/{course}', [InstructorApiController::class, 'showCourse']);
-        Route::post('/courses/{course}/regenerate-code', [InstructorApiController::class, 'regenerateCode']);
+        Route::get('/dashboard', [InstructorDashboardController::class, 'dashboard']);
+        Route::get('/courses', [InstructorCourseController::class, 'courses']);
+        Route::post('/courses', [InstructorCourseController::class, 'storeCourse']);
+        Route::get('/courses/{course}', [InstructorCourseController::class, 'showCourse']);
+        Route::post('/courses/{course}/regenerate-code', [InstructorCourseController::class, 'regenerateCode']);
 
-        Route::post('/courses/{course}/lessons', [InstructorApiController::class, 'storeLesson']);
-        Route::post('/courses/{course}/materials', [InstructorApiController::class, 'storeMaterial'])
+        Route::post('/courses/{course}/lessons', [InstructorLessonMaterialController::class, 'storeLesson']);
+        Route::post('/courses/{course}/materials', [InstructorLessonMaterialController::class, 'storeMaterial'])
             ->middleware('throttle:uploads');
-        Route::delete('/courses/{course}/materials/{material}', [InstructorApiController::class, 'destroyMaterial']);
+        Route::delete('/courses/{course}/materials/{material}', [InstructorLessonMaterialController::class, 'destroyMaterial']);
 
-        Route::post('/courses/{course}/assignments', [InstructorApiController::class, 'storeAssignment']);
-        Route::get('/submissions', [InstructorApiController::class, 'submissions']);
-        Route::post('/submissions/{submission}/grade', [InstructorApiController::class, 'gradeSubmission']);
+        Route::post('/courses/{course}/assignments', [InstructorAssignmentController::class, 'storeAssignment']);
+        Route::get('/submissions', [InstructorAssignmentController::class, 'submissions']);
+        Route::post('/submissions/{submission}/grade', [InstructorAssignmentController::class, 'gradeSubmission']);
 
-        Route::get('/question-bank', [InstructorApiController::class, 'questionBank']);
-        Route::post('/question-bank', [InstructorApiController::class, 'storeQuestion']);
-        Route::post('/courses/{course}/quizzes', [InstructorApiController::class, 'storeQuiz']);
+        Route::get('/question-bank', [InstructorQuestionBankController::class, 'questionBank']);
+        Route::post('/question-bank', [InstructorQuestionBankController::class, 'storeQuestion']);
+        Route::post('/courses/{course}/quizzes', [InstructorQuizController::class, 'storeQuiz']);
 
-        Route::get('/courses/{course}/gradebook', [InstructorApiController::class, 'gradebook']);
-        Route::post('/courses/{course}/gradebook/{studentId}', [InstructorApiController::class, 'updateGradeFeedback']);
-        Route::post('/courses/{course}/gradebook-recalculate', [InstructorApiController::class, 'recalculateGradebook']);
-        Route::post('/courses/{course}/announcements', [InstructorApiController::class, 'storeAnnouncement']);
+        Route::get('/courses/{course}/gradebook', [InstructorGradebookController::class, 'gradebook']);
+        Route::post('/courses/{course}/gradebook/{studentId}', [InstructorGradebookController::class, 'updateGradeFeedback']);
+        Route::post('/courses/{course}/gradebook-recalculate', [InstructorGradebookController::class, 'recalculateGradebook']);
+        Route::post('/courses/{course}/announcements', [InstructorCourseController::class, 'storeAnnouncement']);
     });
 
     // Administrator Module
     Route::prefix('admin')->middleware('role:admin')->group(function () {
-        Route::get('/dashboard', [AdminApiController::class, 'dashboard']);
-        Route::get('/users', [AdminApiController::class, 'users']);
-        Route::post('/users', [AdminApiController::class, 'storeUser']);
-        Route::put('/users/{user}', [AdminApiController::class, 'updateUser']);
-        Route::patch('/users/{user}/toggle-status', [AdminApiController::class, 'toggleUserStatus']);
-        Route::put('/users/{user}/reset-password', [AdminApiController::class, 'resetUserPassword']);
+        Route::get('/dashboard', [AdminDashboardController::class, 'dashboard']);
+        Route::get('/users', [AdminUserController::class, 'users']);
+        Route::post('/users', [AdminUserController::class, 'storeUser']);
+        Route::put('/users/{user}', [AdminUserController::class, 'updateUser']);
+        Route::patch('/users/{user}/toggle-status', [AdminUserController::class, 'toggleUserStatus']);
+        Route::put('/users/{user}/reset-password', [AdminUserController::class, 'resetUserPassword']);
 
-        Route::get('/courses', [AdminApiController::class, 'courses']);
-        Route::post('/courses', [AdminApiController::class, 'storeCourse']);
-        Route::delete('/courses/{course}', [AdminApiController::class, 'destroyCourse']);
+        Route::get('/courses', [AdminCourseController::class, 'courses']);
+        Route::post('/courses', [AdminCourseController::class, 'storeCourse']);
+        Route::delete('/courses/{course}', [AdminCourseController::class, 'destroyCourse']);
 
-        Route::get('/categories', [AdminApiController::class, 'categories']);
-        Route::post('/categories', [AdminApiController::class, 'storeCategory']);
+        Route::get('/categories', [AdminCourseController::class, 'categories']);
+        Route::post('/categories', [AdminCourseController::class, 'storeCategory']);
 
-        Route::get('/reports', [AdminApiController::class, 'reports']);
-        Route::get('/reports/export-pdf', [AdminApiController::class, 'exportPdf']);
-        Route::get('/reports/export-excel', [AdminApiController::class, 'exportExcel']);
+        Route::get('/reports', [AdminReportController::class, 'reports']);
+        Route::get('/reports/export-pdf', [AdminReportController::class, 'exportPdf']);
+        Route::get('/reports/export-excel', [AdminReportController::class, 'exportExcel']);
 
-        Route::get('/announcements', [AdminApiController::class, 'announcements']);
-        Route::post('/announcements', [AdminApiController::class, 'storeAnnouncement']);
-        Route::get('/activity-logs', [AdminApiController::class, 'activityLogs']);
+        Route::get('/announcements', [AdminAnnouncementController::class, 'announcements']);
+        Route::post('/announcements', [AdminAnnouncementController::class, 'storeAnnouncement']);
+        Route::get('/activity-logs', [AdminDashboardController::class, 'activityLogs']);
     });
 });

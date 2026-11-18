@@ -247,6 +247,13 @@ class LmsDemoSeeder extends Seeder
                     ['status' => 'active', 'progress_percentage' => 50.00, 'enrolled_at' => now()->subDays(10)]
                 );
             }
+
+            if ($idx >= 2) {
+                Enrollment::query()->updateOrCreate(
+                    ['course_id' => $course3->id, 'student_id' => $student->id],
+                    ['status' => 'active', 'progress_percentage' => 25.00, 'enrolled_at' => now()->subDays(6)]
+                );
+            }
         }
 
         // Lessons & Materials for Course 1
@@ -304,9 +311,27 @@ class LmsDemoSeeder extends Seeder
             ['course_id' => $course2->id, 'meeting_number' => 1],
             ['title' => 'Pertemuan 1: Pemodelan ERD & Normalisasi', 'description' => 'Menghindari anomali insert, update, dan delete dengan normalisasi terstruktur.', 'sort_order' => 1, 'is_published' => true]
         );
+        $c2l2 = Lesson::query()->updateOrCreate(
+            ['course_id' => $course2->id, 'meeting_number' => 2],
+            ['title' => 'Pertemuan 2: Strategi Indexing & Optimasi Query SQL', 'description' => 'Memahami B-Tree index, composite index, dan analisis EXPLAIN.', 'sort_order' => 2, 'is_published' => true]
+        );
         $c2m1 = Material::query()->updateOrCreate(
             ['lesson_id' => $c2l1->id, 'title' => 'Panduan Normalisasi 1NF hingga BCNF'],
-            ['course_id' => $course2->id, 'type' => 'text', 'content' => 'Setiap atribut non-kunci harus bergantung penuh hanya pada kunci kandidat.', 'sort_order' => 1, 'is_published' => true]
+            ['course_id' => $course2->id, 'type' => 'text', 'content' => "Setiap atribut non-kunci harus bergantung penuh hanya pada kunci kandidat.\n\nTahapan:\n- 1NF: Nilai kolom bersifat atomik.\n- 2NF: Tidak ada ketergantungan parsial.\n- 3NF: Tidak ada ketergantungan transitif.", 'sort_order' => 1, 'is_published' => true]
+        );
+        Material::query()->updateOrCreate(
+            ['lesson_id' => $c2l2->id, 'title' => 'Cheat Sheet Indexing & EXPLAIN MySQL'],
+            ['course_id' => $course2->id, 'type' => 'text', 'content' => "Gunakan EXPLAIN sebelum mengoptimasi query lambat.\nPerhatikan kolom type (ALL vs ref/range), key, dan rows.", 'sort_order' => 1, 'is_published' => true]
+        );
+
+        // Lessons for Course 3
+        $c3l1 = Lesson::query()->updateOrCreate(
+            ['course_id' => $course3->id, 'meeting_number' => 1],
+            ['title' => 'Pertemuan 1: Prinsip Aksesibilitas WCAG AA & Tipografi', 'description' => 'Memastikan rasio kontras warna >= 4.5:1 dan navigasi keyboard yang jelas.', 'sort_order' => 1, 'is_published' => true]
+        );
+        Material::query()->updateOrCreate(
+            ['lesson_id' => $c3l1->id, 'title' => 'Panduan Ringkas Kontras & Fokus Keyboard'],
+            ['course_id' => $course3->id, 'type' => 'text', 'content' => "1. Teks normal minimal kontras 4.5:1.\n2. Semua tombol interaktif wajib memiliki focus ring yang terlihat.\n3. Target sentuh minimal 40x40px.", 'sort_order' => 1, 'is_published' => true]
         );
 
         // Material progress for Student 1
@@ -601,10 +626,211 @@ class LmsDemoSeeder extends Seeder
             ]
         );
 
-        // Activity Log
-        ActivityLog::query()->firstOrCreate(
-            ['action' => 'system.seeded', 'description' => 'Inisialisasi data awal VerdantLMS berhasil dijalankan.'],
-            ['user_id' => $admin->id, 'properties' => ['courses' => 3, 'users' => 8]]
+        // Activity Logs (multi-day for realistic dashboard chart)
+        $activitySeeds = [
+            ['action' => 'system.seeded', 'description' => 'Inisialisasi data awal VerdantLMS berhasil dijalankan.', 'user_id' => $admin->id, 'days_ago' => 6],
+            ['action' => 'course.created', 'description' => 'Dr. Nadia Kusuma menerbitkan kelas Arsitektur Aplikasi Web Modern.', 'user_id' => $instructor1->id, 'days_ago' => 5],
+            ['action' => 'enrollment.joined', 'description' => 'Siti Aisyah Putri bergabung ke kelas WEB2026.', 'user_id' => $students[0]->id, 'days_ago' => 4],
+            ['action' => 'assignment.submitted', 'description' => 'Siti Aisyah Putri mengumpulkan Tugas 1: Rancang Service Layer.', 'user_id' => $students[0]->id, 'days_ago' => 3],
+            ['action' => 'quiz.submitted', 'description' => 'Siti Aisyah Putri menyelesaikan Kuis 1 dengan skor 90%.', 'user_id' => $students[0]->id, 'days_ago' => 2],
+            ['action' => 'instructor.submission_graded', 'description' => 'Dr. Nadia Kusuma menilai tugas Siti Aisyah Putri (90).', 'user_id' => $instructor1->id, 'days_ago' => 1],
+            ['action' => 'quiz.submitted', 'description' => 'Dimas Pratama mengumpulkan Kuis 1 (menunggu penilaian essay).', 'user_id' => $students[1]->id, 'days_ago' => 0],
+        ];
+        foreach ($activitySeeds as $logItem) {
+            $log = ActivityLog::query()->firstOrCreate(
+                ['action' => $logItem['action'], 'description' => $logItem['description']],
+                ['user_id' => $logItem['user_id'], 'properties' => ['demo' => true]]
+            );
+            $log->created_at = now()->subDays($logItem['days_ago']);
+            $log->updated_at = now()->subDays($logItem['days_ago']);
+            $log->save();
+        }
+
+        // Pending Essay Attempt for Student 2 on Quiz 1 (great for demoing Essay Grading)
+        $attempt2 = QuizAttempt::query()->updateOrCreate(
+            ['quiz_id' => $quiz1->id, 'student_id' => $students[1]->id, 'attempt_number' => 1],
+            [
+                'status' => 'submitted',
+                'question_order' => [$q1->id, $q2->id, $q3->id],
+                'started_at' => now()->subHours(2),
+                'expires_at' => now()->subHours(1)->subMinutes(40),
+                'submitted_at' => now()->subHours(1)->subMinutes(45),
+                'objective_score' => 50,
+                'essay_score' => 0,
+                'total_score' => 50,
+                'percentage' => 50,
+                'is_passed' => false,
+                'needs_manual_grading' => true,
+            ]
+        );
+        QuizAnswer::query()->updateOrCreate(
+            ['quiz_attempt_id' => $attempt2->id, 'question_id' => $q1->id],
+            ['selected_option_id' => $q1CorrectOption?->id, 'is_correct' => true, 'score_awarded' => 25, 'answered_at' => now()->subHours(2)]
+        );
+        QuizAnswer::query()->updateOrCreate(
+            ['quiz_attempt_id' => $attempt2->id, 'question_id' => $q2->id],
+            ['selected_option_id' => $q2CorrectOption?->id, 'is_correct' => true, 'score_awarded' => 25, 'answered_at' => now()->subHours(2)]
+        );
+        QuizAnswer::query()->updateOrCreate(
+            ['quiz_attempt_id' => $attempt2->id, 'question_id' => $q3->id],
+            ['essay_answer' => 'Karena data dari client bisa diubah user melalui inspect element atau Postman, jadi server harus selalu menghitung ulang skor dan memeriksa hak akses.', 'answered_at' => now()->subHours(2)]
+        );
+
+        // Additional Bank Soal across all 3 subjects (IF-301, IF-204, DK-210)
+        $extraQuestions = [
+            // IF-301 (Web)
+            [
+                'subject_id' => $subjWeb->id, 'category_id' => $catWeb->id, 'course_id' => $course1->id, 'created_by' => $instructor1->id,
+                'type' => 'multiple_choice', 'points' => 20, 'difficulty' => 'medium',
+                'question_text' => 'Directive Vue 3 manakah yang digunakan untuk melakukan binding dua arah pada input form?',
+                'explanation' => 'v-model menyediakan two-way binding antara state komponen dan elemen input.',
+                'options' => [
+                    ['v-model', true], ['v-bind', false], ['v-once', false], ['v-html', false],
+                ],
+            ],
+            [
+                'subject_id' => $subjWeb->id, 'category_id' => $catWeb->id, 'course_id' => $course1->id, 'created_by' => $instructor1->id,
+                'type' => 'multiple_choice', 'points' => 20, 'difficulty' => 'hard',
+                'question_text' => 'Method Laravel manakah yang paling tepat untuk membungkus beberapa operasi tulis database agar bersifat atomik?',
+                'explanation' => 'DB::transaction() otomatis melakukan rollback jika terjadi exception di dalam closure.',
+                'options' => [
+                    ['DB::transaction()', true], ['DB::select()', false], ['Cache::remember()', false], ['Route::middleware()', false],
+                ],
+            ],
+            [
+                'subject_id' => $subjWeb->id, 'category_id' => $catWeb->id, 'course_id' => $course1->id, 'created_by' => $instructor1->id,
+                'type' => 'true_false', 'points' => 15, 'difficulty' => 'easy',
+                'question_text' => 'Inertia.js memungkinkan pembuatan SPA modern menggunakan routing dan controller Laravel tanpa harus membangun REST API terpisah.',
+                'explanation' => 'Inertia bertindak sebagai perekat antara backend Laravel dan frontend Vue/React.',
+                'options' => [['Benar', true], ['Salah', false]],
+            ],
+            // IF-204 (Database)
+            [
+                'subject_id' => $subjDb->id, 'category_id' => $catData->id, 'course_id' => $course2->id, 'created_by' => $instructor1->id,
+                'type' => 'multiple_choice', 'points' => 25, 'difficulty' => 'easy',
+                'question_text' => 'Bentuk normal manakah yang mensyaratkan setiap atribut non-kunci tidak memiliki ketergantungan transitif terhadap primary key?',
+                'explanation' => 'Third Normal Form (3NF) menghilangkan ketergantungan transitif antar kolom non-kunci.',
+                'options' => [
+                    ['3NF (Third Normal Form)', true], ['1NF (First Normal Form)', false], ['Unnormalized Form', false], ['2NF (Second Normal Form)', false],
+                ],
+            ],
+            [
+                'subject_id' => $subjDb->id, 'category_id' => $catData->id, 'course_id' => $course2->id, 'created_by' => $instructor1->id,
+                'type' => 'true_false', 'points' => 25, 'difficulty' => 'medium',
+                'question_text' => 'Menambahkan index pada setiap kolom di tabel selalu meningkatkan performa operasi INSERT dan UPDATE.',
+                'explanation' => 'Salah. Index mempercepat SELECT, namun memperlambat INSERT/UPDATE karena index harus ikut diperbarui.',
+                'options' => [['Benar', false], ['Salah', true]],
+            ],
+            [
+                'subject_id' => $subjDb->id, 'category_id' => $catData->id, 'course_id' => $course2->id, 'created_by' => $instructor1->id,
+                'type' => 'multiple_choice', 'points' => 25, 'difficulty' => 'medium',
+                'question_text' => 'Properti ACID manakah yang menjamin bahwa seluruh perubahan dalam transaksi tersimpan permanen setelah commit meskipun terjadi mati listrik?',
+                'explanation' => 'Durability memastikan hasil transaksi yang sudah commit tetap bertahan.',
+                'options' => [
+                    ['Durability', true], ['Atomicity', false], ['Consistency', false], ['Isolation', false],
+                ],
+            ],
+            [
+                'subject_id' => $subjDb->id, 'category_id' => $catData->id, 'course_id' => $course2->id, 'created_by' => $instructor1->id,
+                'type' => 'essay', 'points' => 25, 'difficulty' => 'hard',
+                'question_text' => 'Jelaskan perbedaan antara INNER JOIN dan LEFT JOIN beserta contoh kasus penggunaannya pada LMS.',
+                'explanation' => 'INNER JOIN hanya mengembalikan baris yang cocok di kedua tabel, sedangkan LEFT JOIN tetap menampilkan semua baris dari tabel kiri.',
+                'options' => [],
+            ],
+            // DK-210 (UI/UX)
+            [
+                'subject_id' => $subjUx->id, 'category_id' => $catDesign->id, 'course_id' => $course3->id, 'created_by' => $instructor1->id,
+                'type' => 'multiple_choice', 'points' => 25, 'difficulty' => 'easy',
+                'question_text' => 'Berapa rasio kontras warna minimum untuk teks normal agar memenuhi standar WCAG 2.1 Level AA?',
+                'explanation' => 'WCAG 2.1 Level AA mensyaratkan rasio kontras minimal 4.5:1 untuk teks berukuran normal.',
+                'options' => [
+                    ['4.5 : 1', true], ['2.0 : 1', false], ['3.0 : 1', false], ['1.5 : 1', false],
+                ],
+            ],
+            [
+                'subject_id' => $subjUx->id, 'category_id' => $catDesign->id, 'course_id' => $course3->id, 'created_by' => $instructor1->id,
+                'type' => 'true_false', 'points' => 25, 'difficulty' => 'easy',
+                'question_text' => 'Navigasi menggunakan tombol Tab pada keyboard merupakan salah satu aspek penting dalam pengujian aksesibilitas web.',
+                'explanation' => 'Benar, pengguna screen reader dan keyboard-only bergantung pada urutan fokus Tab yang logis.',
+                'options' => [['Benar', true], ['Salah', false]],
+            ],
+        ];
+
+        $dbQuestions = [];
+        foreach ($extraQuestions as $eq) {
+            $qModel = Question::query()->firstOrCreate(
+                ['question_text' => $eq['question_text'], 'created_by' => $eq['created_by']],
+                [
+                    'category_id' => $eq['category_id'],
+                    'subject_id' => $eq['subject_id'],
+                    'course_id' => $eq['course_id'],
+                    'type' => $eq['type'],
+                    'explanation' => $eq['explanation'],
+                    'points' => $eq['points'],
+                    'difficulty' => $eq['difficulty'],
+                    'is_bank' => true,
+                ]
+            );
+            if ($qModel->type !== 'essay' && $qModel->options()->count() === 0) {
+                $rows = [];
+                foreach ($eq['options'] as $idx => [$text, $correct]) {
+                    $rows[] = [
+                        'question_id' => $qModel->id,
+                        'option_text' => $text,
+                        'is_correct' => $correct,
+                        'sort_order' => $idx + 1,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                }
+                QuestionOption::insert($rows);
+            }
+            if ($eq['subject_id'] === $subjDb->id) {
+                $dbQuestions[] = $qModel;
+            }
+        }
+
+        // Playable Quiz on Course 2 (DB2026) so Student 1 can demo taking a live quiz + autosave immediately
+        $quizDb = Quiz::query()->updateOrCreate(
+            ['course_id' => $course2->id, 'title' => 'Kuis 1: Normalisasi & Transaksi Basis Data'],
+            [
+                'lesson_id' => $c2l1->id,
+                'created_by' => $instructor2->id,
+                'description' => 'Uji pemahaman mengenai normalisasi 1NF–3NF, properti ACID, dan strategi indexing.',
+                'type' => 'quiz',
+                'duration_minutes' => 30,
+                'starts_at' => now()->subDays(2),
+                'ends_at' => now()->addDays(21),
+                'max_attempts' => 3,
+                'passing_score' => 70,
+                'shuffle_questions' => false,
+                'shuffle_options' => true,
+                'show_results' => true,
+                'show_explanations' => true,
+                'is_published' => true,
+            ]
+        );
+        if ($dbQuestions !== []) {
+            $syncDb = [];
+            foreach ($dbQuestions as $idx => $dq) {
+                $syncDb[$dq->id] = ['sort_order' => $idx + 1, 'points' => $dq->points];
+            }
+            $quizDb->questions()->sync($syncDb);
+        }
+
+        // Assignment on Course 2 for Student demo
+        Assignment::query()->updateOrCreate(
+            ['course_id' => $course2->id, 'title' => 'Tugas 1: Normalisasi Tabel Transaksi Kampus'],
+            [
+                'lesson_id' => $c2l1->id,
+                'created_by' => $instructor2->id,
+                'description' => 'Ubah skema tabel KRS yang belum ternormalisasi menjadi bentuk 3NF beserta penjelasan setiap tahapannya.',
+                'due_at' => now()->addDays(7),
+                'max_score' => 100,
+                'submission_type' => 'both',
+                'allow_late_submission' => true,
+                'is_published' => true,
+            ]
         );
     }
 }

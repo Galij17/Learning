@@ -6,14 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Instructor\StoreQuestionRequest;
 use App\Models\Category;
 use App\Models\Question;
-use App\Models\QuestionOption;
 use App\Models\Quiz;
 use App\Models\Subject;
+use App\Services\QuestionManagementService;
 use App\Services\QuestionSpreadsheetService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -21,6 +20,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class QuestionBankController extends Controller
 {
+    public function __construct(
+        private readonly QuestionManagementService $questionService,
+    ) {}
+
     public function index(Request $request): Response
     {
         $user = $request->user();
@@ -73,31 +76,18 @@ class QuestionBankController extends Controller
 
     public function store(StoreQuestionRequest $request): RedirectResponse
     {
-        DB::transaction(function () use ($request) {
-            $question = Question::query()->create([
-                'category_id' => $request->input('category_id'),
-                'subject_id' => $request->input('subject_id'),
-                'course_id' => $request->input('course_id'),
-                'created_by' => $request->user()->id,
-                'type' => $request->string('type')->toString(),
-                'question_text' => $request->string('question_text')->toString(),
-                'explanation' => $request->input('explanation'),
-                'points' => $request->float('points'),
-                'difficulty' => $request->string('difficulty')->toString(),
-                'is_bank' => $request->boolean('is_bank', true),
-            ]);
-
-            if ($question->type !== 'essay') {
-                foreach ($request->input('options', []) as $idx => $opt) {
-                    QuestionOption::query()->create([
-                        'question_id' => $question->id,
-                        'option_text' => $opt['option_text'],
-                        'is_correct' => (bool) ($opt['is_correct'] ?? false),
-                        'sort_order' => $idx + 1,
-                    ]);
-                }
-            }
-        });
+        $this->questionService->createQuestion($request->user(), [
+            'category_id' => $request->input('category_id'),
+            'subject_id' => $request->input('subject_id'),
+            'course_id' => $request->input('course_id'),
+            'type' => $request->string('type')->toString(),
+            'question_text' => $request->string('question_text')->toString(),
+            'explanation' => $request->input('explanation'),
+            'points' => $request->float('points'),
+            'difficulty' => $request->string('difficulty')->toString(),
+            'is_bank' => $request->boolean('is_bank', true),
+            'options' => $request->input('options', []),
+        ]);
 
         return back()->with('success', 'Soal berhasil ditambahkan ke bank soal.');
     }
@@ -108,29 +98,16 @@ class QuestionBankController extends Controller
             abort(403);
         }
 
-        DB::transaction(function () use ($request, $question) {
-            $question->update([
-                'category_id' => $request->input('category_id'),
-                'subject_id' => $request->input('subject_id'),
-                'type' => $request->string('type')->toString(),
-                'question_text' => $request->string('question_text')->toString(),
-                'explanation' => $request->input('explanation'),
-                'points' => $request->float('points'),
-                'difficulty' => $request->string('difficulty')->toString(),
-            ]);
-
-            $question->options()->delete();
-            if ($question->type !== 'essay') {
-                foreach ($request->input('options', []) as $idx => $opt) {
-                    QuestionOption::query()->create([
-                        'question_id' => $question->id,
-                        'option_text' => $opt['option_text'],
-                        'is_correct' => (bool) ($opt['is_correct'] ?? false),
-                        'sort_order' => $idx + 1,
-                    ]);
-                }
-            }
-        });
+        $this->questionService->updateQuestion($question, [
+            'category_id' => $request->input('category_id'),
+            'subject_id' => $request->input('subject_id'),
+            'type' => $request->string('type')->toString(),
+            'question_text' => $request->string('question_text')->toString(),
+            'explanation' => $request->input('explanation'),
+            'points' => $request->float('points'),
+            'difficulty' => $request->string('difficulty')->toString(),
+            'options' => $request->input('options', []),
+        ]);
 
         return back()->with('success', 'Soal berhasil diperbarui.');
     }
@@ -192,31 +169,7 @@ class QuestionBankController extends Controller
             abort(403);
         }
 
-        $question->load('options');
-
-        DB::transaction(function () use ($request, $question) {
-            $copy = Question::query()->create([
-                'category_id' => $question->category_id,
-                'subject_id' => $question->subject_id,
-                'course_id' => $question->course_id,
-                'created_by' => $request->user()->id,
-                'type' => $question->type,
-                'question_text' => $question->question_text . ' (Salinan)',
-                'explanation' => $question->explanation,
-                'points' => $question->points,
-                'difficulty' => $question->difficulty,
-                'is_bank' => true,
-            ]);
-
-            foreach ($question->options as $opt) {
-                QuestionOption::query()->create([
-                    'question_id' => $copy->id,
-                    'option_text' => $opt->option_text,
-                    'is_correct' => $opt->is_correct,
-                    'sort_order' => $opt->sort_order,
-                ]);
-            }
-        });
+        $this->questionService->duplicateQuestion($question, $request->user());
 
         return back()->with('success', 'Soal berhasil diduplikasi.');
     }
@@ -242,19 +195,14 @@ class QuestionBankController extends Controller
         $action = $validated['action'];
 
         if ($action === 'delete') {
-            Question::query()->whereIn('id', $questions->pluck('id'))->delete();
+            $this->questionService->bulkDelete($questions);
 
             return back()->with('success', "{$questions->count()} soal berhasil dihapus dari bank soal.");
         }
 
         if ($action === 'move_subject') {
             $subject = Subject::query()->findOrFail($validated['subject_id']);
-            Question::query()
-                ->whereIn('id', $questions->pluck('id'))
-                ->update([
-                    'subject_id' => $subject->id,
-                    'category_id' => $subject->category_id,
-                ]);
+            $this->questionService->bulkMoveToSubject($questions, $subject);
 
             return back()->with('success', "{$questions->count()} soal dipindahkan ke {$subject->code} — {$subject->name}.");
         }
@@ -263,17 +211,7 @@ class QuestionBankController extends Controller
         $quiz = Quiz::query()->findOrFail($validated['quiz_id']);
         Gate::authorize('manage', $quiz);
 
-        DB::transaction(function () use ($quiz, $questions) {
-            $currentCount = $quiz->questions()->count();
-            $attachData = [];
-            foreach ($questions->values() as $idx => $question) {
-                $attachData[$question->id] = [
-                    'sort_order' => $currentCount + $idx + 1,
-                    'points' => $question->points,
-                ];
-            }
-            $quiz->questions()->syncWithoutDetaching($attachData);
-        });
+        $this->questionService->attachQuestionsToQuiz($quiz, $questions);
 
         return back()->with('success', "{$questions->count()} soal dimasukkan ke kuis \"{$quiz->title}\".");
     }

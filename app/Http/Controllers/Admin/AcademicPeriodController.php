@@ -3,12 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\SaveAcademicPeriodRequest;
 use App\Models\AcademicPeriod;
 use App\Services\ActivityLogService;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -28,15 +27,9 @@ class AcademicPeriodController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(SaveAcademicPeriodRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:120'],
-            'code' => ['required', 'string', 'max:40', 'unique:academic_periods,code'],
-            'start_date' => ['required', 'date'],
-            'end_date' => ['required', 'date', 'after:start_date'],
-            'is_active' => ['boolean'],
-        ]);
+        $validated = $request->validated();
 
         DB::transaction(function () use ($request, $validated) {
             $isActive = $request->boolean('is_active');
@@ -56,15 +49,9 @@ class AcademicPeriodController extends Controller
         return back()->with('success', 'Periode akademik berhasil ditambahkan.');
     }
 
-    public function update(Request $request, AcademicPeriod $period): RedirectResponse
+    public function update(SaveAcademicPeriodRequest $request, AcademicPeriod $period): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:120'],
-            'code' => ['required', 'string', 'max:40', Rule::unique('academic_periods', 'code')->ignore($period->id)],
-            'start_date' => ['required', 'date'],
-            'end_date' => ['required', 'date', 'after:start_date'],
-            'is_active' => ['boolean'],
-        ]);
+        $validated = $request->validated();
 
         DB::transaction(function () use ($request, $validated, $period) {
             $isActive = $request->boolean('is_active');

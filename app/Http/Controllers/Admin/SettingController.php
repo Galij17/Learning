@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\UpdateSettingsRequest;
 use App\Models\Setting;
 use App\Services\ActivityLogService;
 use App\Services\FileStorageService;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
@@ -37,17 +37,9 @@ class SettingController extends Controller
         ]);
     }
 
-    public function update(Request $request): RedirectResponse
+    public function update(UpdateSettingsRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'site_name' => ['required', 'string', 'max:80'],
-            'site_tagline' => ['nullable', 'string', 'max:180'],
-            'institution_name' => ['required', 'string', 'max:150'],
-            'support_email' => ['required', 'email', 'max:150'],
-            'allow_registration' => ['boolean'],
-            'default_passing_score' => ['required', 'integer', 'min:0', 'max:100'],
-            'site_logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
-        ]);
+        $validated = $request->validated();
 
         DB::transaction(function () use ($request, $validated) {
             Setting::setValue('site_name', $validated['site_name'], 'branding');

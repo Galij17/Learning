@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreCommentRequest;
+use App\Http\Requests\StoreDiscussionRequest;
 use App\Models\Comment;
 use App\Models\Course;
 use App\Models\Discussion;
@@ -9,7 +11,6 @@ use App\Services\ActivityLogService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -37,14 +38,11 @@ class DiscussionController extends Controller
         ]);
     }
 
-    public function store(Request $request, Course $course): RedirectResponse
+    public function store(StoreDiscussionRequest $request, Course $course): RedirectResponse
     {
         Gate::authorize('view', $course);
 
-        $validated = $request->validate([
-            'title' => ['required', 'string', 'max:180'],
-            'body' => ['required', 'string', 'max:10000'],
-        ]);
+        $validated = $request->validated();
 
         $discussion = Discussion::query()->create([
             'course_id' => $course->id,
@@ -76,7 +74,7 @@ class DiscussionController extends Controller
         ]);
     }
 
-    public function storeComment(Request $request, Course $course, Discussion $discussion): RedirectResponse
+    public function storeComment(StoreCommentRequest $request, Course $course, Discussion $discussion): RedirectResponse
     {
         abort_unless((int) $discussion->course_id === (int) $course->id, 404);
         Gate::authorize('view', $discussion);
@@ -85,13 +83,7 @@ class DiscussionController extends Controller
             return back()->with('error', 'Diskusi ini telah dikunci oleh pengajar.');
         }
 
-        $validated = $request->validate([
-            'body' => ['required', 'string', 'max:5000'],
-            'parent_id' => [
-                'nullable',
-                Rule::exists('comments', 'id')->where('discussion_id', $discussion->id)->whereNull('deleted_at'),
-            ],
-        ]);
+        $validated = $request->validated();
 
         Comment::query()->create([
             'discussion_id' => $discussion->id,

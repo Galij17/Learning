@@ -8,20 +8,17 @@ use App\Http\Requests\Instructor\StoreQuizRequest;
 use App\Models\Category;
 use App\Models\Course;
 use App\Models\Question;
-use App\Models\QuestionOption;
 use App\Models\Quiz;
 use App\Models\QuizAttempt;
 use App\Models\Subject;
-use App\Notifications\QuizPublishedNotification;
-use App\Services\ActivityLogService;
+use App\Services\QuestionManagementService;
 use App\Services\QuestionSpreadsheetService;
 use App\Services\QuizAttemptService;
+use App\Services\QuizManagementService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Notification;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -29,8 +26,9 @@ class QuizController extends Controller
 {
     public function __construct(
         private readonly QuizAttemptService $quizAttemptService,
-        private readonly ActivityLogService $activityLogService,
         private readonly QuestionSpreadsheetService $questionSpreadsheetService,
+        private readonly QuestionManagementService $questionService,
+        private readonly QuizManagementService $quizService,
     ) {}
 
     public function create(Request $request, Course $course): Response
@@ -59,82 +57,7 @@ class QuizController extends Controller
     {
         Gate::authorize('update', $course);
 
-        $quiz = DB::transaction(function () use ($request, $course) {
-            $quiz = Quiz::query()->create([
-                'course_id' => $course->id,
-                'lesson_id' => $request->input('lesson_id'),
-                'created_by' => $request->user()->id,
-                'title' => $request->string('title')->toString(),
-                'description' => $request->input('description'),
-                'type' => $request->string('type')->toString(),
-                'duration_minutes' => $request->integer('duration_minutes'),
-                'starts_at' => $request->input('starts_at'),
-                'ends_at' => $request->input('ends_at'),
-                'max_attempts' => $request->integer('max_attempts'),
-                'passing_score' => $request->float('passing_score'),
-                'shuffle_questions' => $request->boolean('shuffle_questions'),
-                'shuffle_options' => $request->boolean('shuffle_options'),
-                'show_results' => $request->boolean('show_results', true),
-                'show_explanations' => $request->boolean('show_explanations', true),
-                'is_published' => $request->boolean('is_published'),
-            ]);
-
-            $sortOrder = 0;
-
-            if ($request->filled('question_ids')) {
-                $bankQuestions = Question::query()->whereIn('id', $request->input('question_ids', []))->get()->keyBy('id');
-                $syncData = [];
-                foreach ($request->input('question_ids', []) as $qId) {
-                    if ($q = $bankQuestions->get($qId)) {
-                        $sortOrder++;
-                        $syncData[$qId] = ['sort_order' => $sortOrder, 'points' => $q->points];
-                    }
-                }
-                if ($syncData !== []) {
-                    $quiz->questions()->syncWithoutDetaching($syncData);
-                }
-            }
-
-            foreach ($request->input('new_questions', []) as $item) {
-                $question = Question::query()->create([
-                    'category_id' => $course->category_id,
-                    'subject_id' => $course->subject_id,
-                    'course_id' => $course->id,
-                    'created_by' => $request->user()->id,
-                    'type' => $item['type'],
-                    'question_text' => $item['question_text'],
-                    'explanation' => $item['explanation'] ?? null,
-                    'points' => (float) $item['points'],
-                    'difficulty' => $item['difficulty'],
-                    'is_bank' => true,
-                ]);
-
-                if ($question->type !== 'essay') {
-                    foreach ($item['options'] ?? [] as $idx => $opt) {
-                        QuestionOption::query()->create([
-                            'question_id' => $question->id,
-                            'option_text' => $opt['option_text'],
-                            'is_correct' => (bool) ($opt['is_correct'] ?? false),
-                            'sort_order' => $idx + 1,
-                        ]);
-                    }
-                }
-
-                $sortOrder++;
-                $quiz->questions()->attach($question->id, [
-                    'sort_order' => $sortOrder,
-                    'points' => $question->points,
-                ]);
-            }
-
-            return $quiz;
-        });
-
-        if ($quiz->is_published) {
-            Notification::send($course->students, new QuizPublishedNotification($quiz));
-        }
-
-        $this->activityLogService->log('instructor.quiz_created', "Membuat {$quiz->type} {$quiz->title}.", $quiz);
+        $quiz = $this->quizService->createQuiz($course, $request->user(), $request->validated());
 
         return redirect()->route('instructor.quizzes.show', [$course->id, $quiz->id])
             ->with('success', 'Kuis/Ujian berhasil dibuat. Silakan kelola daftar soal.');
@@ -206,28 +129,7 @@ class QuizController extends Controller
         abort_unless((int) $quiz->course_id === (int) $course->id, 404);
         Gate::authorize('manage', $quiz);
 
-        $wasPublished = $quiz->is_published;
-
-        $quiz->update([
-            'lesson_id' => $request->input('lesson_id'),
-            'title' => $request->string('title')->toString(),
-            'description' => $request->input('description'),
-            'type' => $request->string('type')->toString(),
-            'duration_minutes' => $request->integer('duration_minutes'),
-            'starts_at' => $request->input('starts_at'),
-            'ends_at' => $request->input('ends_at'),
-            'max_attempts' => $request->integer('max_attempts'),
-            'passing_score' => $request->float('passing_score'),
-            'shuffle_questions' => $request->boolean('shuffle_questions'),
-            'shuffle_options' => $request->boolean('shuffle_options'),
-            'show_results' => $request->boolean('show_results', true),
-            'show_explanations' => $request->boolean('show_explanations', true),
-            'is_published' => $request->boolean('is_published'),
-        ]);
-
-        if (! $wasPublished && $quiz->is_published) {
-            Notification::send($course->students, new QuizPublishedNotification($quiz));
-        }
+        $this->quizService->updateQuiz($course, $quiz, $request->validated());
 
         return back()->with('success', 'Pengaturan kuis/ujian berhasil diperbarui.');
     }
@@ -254,7 +156,7 @@ class QuizController extends Controller
         }
 
         $questions = Question::query()->whereIn('id', $validated['question_ids'])->get();
-        $this->attachQuestionsOrdered($quiz, $questions);
+        $this->questionService->attachQuestionsToQuiz($quiz, $questions);
 
         return back()->with('success', count($validated['question_ids']) . ' soal dari bank soal berhasil ditambahkan ke kuis/ujian.');
     }
@@ -271,23 +173,11 @@ class QuizController extends Controller
             'difficulty' => ['nullable', 'in:easy,medium,hard'],
         ]);
 
-        $attachedIds = $quiz->questions()->pluck('questions.id');
-
-        $picked = Question::query()
-            ->when(! $request->user()->isAdmin(), fn ($q) => $q->where('created_by', $request->user()->id))
-            ->whereNotIn('id', $attachedIds)
-            ->when($validated['subject_id'] ?? null, fn ($q, $sId) => $q->where('subject_id', $sId))
-            ->when($validated['type'] ?? null, fn ($q, $type) => $q->where('type', $type))
-            ->when($validated['difficulty'] ?? null, fn ($q, $diff) => $q->where('difficulty', $diff))
-            ->inRandomOrder()
-            ->limit((int) $validated['count'])
-            ->get();
+        $picked = $this->quizService->autoPickQuestions($quiz, $request->user(), $validated);
 
         if ($picked->isEmpty()) {
             return back()->with('error', 'Tidak ada soal yang cocok atau belum terpasang untuk kriteria tersebut.');
         }
-
-        $this->attachQuestionsOrdered($quiz, $picked);
 
         $added = $picked->count();
         $msg = $added < (int) $validated['count']
@@ -309,16 +199,13 @@ class QuizController extends Controller
         $sourceQuiz = Quiz::query()->with('questions')->findOrFail($validated['source_quiz_id']);
         Gate::authorize('manage', $sourceQuiz);
 
-        $existingIds = $quiz->questions()->pluck('questions.id')->all();
-        $toAttach = $sourceQuiz->questions->reject(fn (Question $q) => in_array($q->id, $existingIds, true));
+        $attached = $this->quizService->cloneFromQuiz($quiz, $sourceQuiz);
 
-        if ($toAttach->isEmpty()) {
+        if ($attached->isEmpty()) {
             return back()->with('error', 'Seluruh soal dari kuis sumber sudah ada di kuis ini atau kuis sumber kosong.');
         }
 
-        $this->attachQuestionsOrdered($quiz, $toAttach);
-
-        return back()->with('success', "{$toAttach->count()} soal berhasil disalin dari \"{$sourceQuiz->title}\".");
+        return back()->with('success', "{$attached->count()} soal berhasil disalin dari \"{$sourceQuiz->title}\".");
     }
 
     public function importQuestions(Request $request, Course $course, Quiz $quiz): RedirectResponse
@@ -344,58 +231,24 @@ class QuizController extends Controller
         return back()->with('success', "{$result['imported_count']} soal dari file Excel berhasil ditambahkan ke kuis ini.");
     }
 
-    /**
-     * @param  Collection<int, Question>  $questions
-     */
-    private function attachQuestionsOrdered(Quiz $quiz, Collection $questions): void
-    {
-        if ($questions->isEmpty()) {
-            return;
-        }
-
-        DB::transaction(function () use ($quiz, $questions) {
-            $currentCount = $quiz->questions()->count();
-            $attachData = [];
-            foreach ($questions->values() as $idx => $question) {
-                $attachData[$question->id] = [
-                    'sort_order' => $currentCount + $idx + 1,
-                    'points' => $question->points,
-                ];
-            }
-
-            $quiz->questions()->syncWithoutDetaching($attachData);
-        });
-    }
-
     public function createInlineQuestion(StoreQuestionRequest $request, Course $course, Quiz $quiz): RedirectResponse
     {
         abort_unless((int) $quiz->course_id === (int) $course->id, 404);
         Gate::authorize('manage', $quiz);
 
         DB::transaction(function () use ($request, $course, $quiz) {
-            $question = Question::query()->create([
+            $question = $this->questionService->createQuestion($request->user(), [
                 'category_id' => $request->input('category_id') ?? $course->category_id,
                 'subject_id' => $request->input('subject_id') ?? $course->subject_id,
                 'course_id' => $course->id,
-                'created_by' => $request->user()->id,
                 'type' => $request->string('type')->toString(),
                 'question_text' => $request->string('question_text')->toString(),
                 'explanation' => $request->input('explanation'),
                 'points' => $request->float('points'),
                 'difficulty' => $request->string('difficulty')->toString(),
                 'is_bank' => $request->boolean('is_bank', true),
+                'options' => $request->input('options', []),
             ]);
-
-            if ($question->type !== 'essay') {
-                foreach ($request->input('options', []) as $idx => $opt) {
-                    QuestionOption::query()->create([
-                        'question_id' => $question->id,
-                        'option_text' => $opt['option_text'],
-                        'is_correct' => (bool) ($opt['is_correct'] ?? false),
-                        'sort_order' => $idx + 1,
-                    ]);
-                }
-            }
 
             $quiz->questions()->attach($question->id, [
                 'sort_order' => $quiz->questions()->count() + 1,
@@ -443,14 +296,7 @@ class QuizController extends Controller
             'question_ids.*' => ['integer', 'exists:questions,id'],
         ]);
 
-        $attachedIds = $quiz->questions()->pluck('questions.id')->all();
-        $orderedIds = array_values(array_intersect($validated['question_ids'], $attachedIds));
-
-        DB::transaction(function () use ($quiz, $orderedIds) {
-            foreach ($orderedIds as $idx => $qId) {
-                $quiz->questions()->updateExistingPivot($qId, ['sort_order' => $idx + 1]);
-            }
-        });
+        $this->quizService->reorderQuestions($quiz, $validated['question_ids']);
 
         return back()->with('success', 'Urutan soal diperbarui.');
     }
