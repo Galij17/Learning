@@ -152,8 +152,19 @@ class QuizController extends Controller
 
         $validated = $request->validate([
             'question_ids' => ['required', 'array', 'min:1'],
-            'question_ids.*' => ['integer', 'exists:questions,id'],
+            'question_ids.*' => ['integer', 'exists:questions,id,deleted_at,NULL'],
         ]);
+
+        if (! $request->user()->isAdmin()) {
+            $allowedCount = Question::query()
+                ->whereIn('id', $validated['question_ids'])
+                ->where(function ($q) use ($request, $course) {
+                    $q->where('created_by', $request->user()->id)
+                        ->orWhere('course_id', $course->id);
+                })
+                ->count();
+            abort_unless($allowedCount === count(array_unique($validated['question_ids'])), 403, 'Sebagian soal tidak dapat diakses.');
+        }
 
         $currentCount = $quiz->questions()->count();
         $attachData = [];

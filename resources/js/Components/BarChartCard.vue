@@ -80,7 +80,10 @@ const chartOptions = computed(() => ({
             <h3 class="text-base font-bold text-[#1E293B] dark:text-[#F8FAFC]">{{ title }}</h3>
             <p v-if="subtitle" class="mt-0.5 text-xs text-[#475569] dark:text-[#CBD5E1]">{{ subtitle }}</p>
         </div>
-        <div class="h-60 w-full">
+        <div v-if="labels.length === 0" class="flex h-60 w-full items-center justify-center rounded-[10px] border border-dashed border-[#E2E8F0] text-xs text-[#475569] dark:border-[#3E4F69] dark:text-[#CBD5E1]">
+            Belum ada data grafik untuk ditampilkan.
+        </div>
+        <div v-else class="h-60 w-full">
             <Bar :data="chartData" :options="chartOptions" />
         </div>
     </div>

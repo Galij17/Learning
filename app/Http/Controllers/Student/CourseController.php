@@ -24,6 +24,7 @@ class CourseController extends Controller
         $student = $request->user();
 
         $enrollments = Enrollment::query()
+            ->whereHas('course')
             ->where('student_id', $student->id)
             ->whereIn('status', ['active', 'completed'])
             ->with([

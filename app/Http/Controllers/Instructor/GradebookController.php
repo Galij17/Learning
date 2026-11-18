@@ -62,20 +62,25 @@ class GradebookController extends Controller
     {
         Gate::authorize('update', $course);
 
+        $enrolledStudent = $course->students()
+            ->where('users.id', $student->id)
+            ->wherePivot('status', '!=', 'dropped')
+            ->firstOrFail();
+
         $validated = $request->validate([
             'instructor_feedback' => ['nullable', 'string', 'max:2000'],
         ]);
 
         $this->gradingService->recalculateStudentGrade(
             $course,
-            $student,
+            $enrolledStudent,
             $request->user(),
             $validated['instructor_feedback'] ?? null
         );
 
-        $this->enrollmentService->issueCertificateIfEligible($course, $student);
+        $this->enrollmentService->issueCertificateIfEligible($course, $enrolledStudent);
 
-        return back()->with('success', "Rekap nilai dan catatan untuk {$student->name} berhasil diperbarui.");
+        return back()->with('success', "Rekap nilai dan catatan untuk {$enrolledStudent->name} berhasil diperbarui.");
     }
 
     public function recalculateAll(Request $request, Course $course): RedirectResponse
@@ -83,7 +88,11 @@ class GradebookController extends Controller
         Gate::authorize('update', $course);
 
         $this->gradingService->recalculateCourseGrades($course, $request->user());
-        foreach ($course->students as $student) {
+        $activeStudents = $course->students()
+            ->wherePivot('status', '!=', 'dropped')
+            ->get();
+
+        foreach ($activeStudents as $student) {
             $this->enrollmentService->issueCertificateIfEligible($course, $student);
         }
 

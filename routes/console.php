@@ -19,16 +19,29 @@ Artisan::command('lms:send-deadline-reminders', function () {
 
     $sentCount = 0;
     foreach ($upcoming as $assignment) {
+        if (! $assignment->course) {
+            continue;
+        }
         $submittedStudentIds = $assignment->submissions->pluck('student_id')->all();
-        foreach ($assignment->course->students as $student) {
+        $activeStudents = $assignment->course->students()
+            ->wherePivot('status', '!=', 'dropped')
+            ->get();
+
+        foreach ($activeStudents as $student) {
             if (in_array($student->id, $submittedStudentIds, true)) {
                 continue;
             }
+            $expectedUrl = route('student.courses.show', $assignment->course_id);
             $alreadyNotified = $student->notifications()
                 ->where('type', AssignmentDeadlineReminderNotification::class)
-                ->where('data->course_id', $assignment->course_id)
                 ->where('created_at', '>=', now()->subHours(24))
-                ->exists();
+                ->get(['data'])
+                ->contains(function ($n) use ($assignment, $expectedUrl) {
+                    $data = is_array($n->data) ? $n->data : [];
+
+                    return ($data['assignment_id'] ?? null) === $assignment->id
+                        || (($data['title'] ?? '') === 'Pengingat Deadline: ' . $assignment->title && ($data['url'] ?? '') === $expectedUrl);
+                });
 
             if (! $alreadyNotified) {
                 $student->notify(new AssignmentDeadlineReminderNotification($assignment));

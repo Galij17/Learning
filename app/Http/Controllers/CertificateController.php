@@ -17,6 +17,7 @@ class CertificateController extends Controller
     public function index(Request $request): Response
     {
         $certificates = Certificate::query()
+            ->whereHas('course')
             ->with(['course:id,title,code,instructor_id', 'course.instructor:id,name'])
             ->where('student_id', $request->user()->id)
             ->latest('issued_at')
@@ -47,7 +48,11 @@ class CertificateController extends Controller
     public function verify(string $hash): Response
     {
         $certificate = Certificate::query()
-            ->with(['student:id,name,identity_number', 'course:id,title,code,instructor_id', 'course.instructor:id,name'])
+            ->with([
+                'student' => fn ($q) => $q->withTrashed()->select('id', 'name', 'identity_number'),
+                'course' => fn ($q) => $q->withTrashed()->select('id', 'title', 'code', 'instructor_id'),
+                'course.instructor' => fn ($q) => $q->withTrashed()->select('id', 'name'),
+            ])
             ->where('verification_hash', $hash)
             ->first();
 

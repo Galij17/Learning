@@ -56,6 +56,7 @@ class LessonController extends Controller
         abort_unless((int) $lesson->course_id === (int) $course->id, 404);
         Gate::authorize('update', $course);
 
+        $lesson->materials()->delete();
         $lesson->delete();
 
         return back()->with('success', 'Bab / pertemuan dihapus.');

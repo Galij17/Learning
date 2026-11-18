@@ -24,9 +24,9 @@ class CourseManagementController extends Controller
         $courses = Course::query()
             ->with(['instructor:id,name,email', 'category:id,name', 'subject:id,name,code', 'academicPeriod:id,name'])
             ->withCount(['enrollments', 'lessons', 'assignments', 'quizzes'])
-            ->when($request->string('search')->toString(), fn ($q, $s) => $q
+            ->when($request->string('search')->toString(), fn ($q, $s) => $q->where(fn ($sub) => $sub
                 ->where('title', 'like', "%{$s}%")
-                ->orWhere('code', 'like', "%{$s}%"))
+                ->orWhere('code', 'like', "%{$s}%")))
             ->when($request->string('status')->toString(), fn ($q, $status) => $q->where('status', $status))
             ->when($request->integer('period_id'), fn ($q, $pid) => $q->where('academic_period_id', $pid))
             ->latest()
@@ -56,10 +56,19 @@ class CourseManagementController extends Controller
             'category_id' => ['required', 'exists:categories,id'],
             'subject_id' => ['nullable', 'exists:subjects,id'],
             'academic_period_id' => ['nullable', 'exists:academic_periods,id'],
-            'instructor_id' => ['required', 'exists:users,id'],
+            'instructor_id' => ['required', 'exists:users,id,deleted_at,NULL'],
             'description' => ['nullable', 'string', 'max:5000'],
             'status' => ['required', 'in:draft,published,archived'],
         ]);
+
+        $instructorValid = User::query()
+            ->whereKey($validated['instructor_id'])
+            ->where('is_active', true)
+            ->whereHas('roles', fn ($q) => $q->whereIn('name', [User::ROLE_INSTRUCTOR, User::ROLE_ADMIN]))
+            ->exists();
+        if (! $instructorValid) {
+            return back()->withErrors(['instructor_id' => 'Pengajar yang dipilih harus akun aktif dengan peran pengajar/admin.']);
+        }
 
         $course = Course::query()->create([
             ...$validated,
@@ -79,10 +88,19 @@ class CourseManagementController extends Controller
             'category_id' => ['required', 'exists:categories,id'],
             'subject_id' => ['nullable', 'exists:subjects,id'],
             'academic_period_id' => ['nullable', 'exists:academic_periods,id'],
-            'instructor_id' => ['required', 'exists:users,id'],
+            'instructor_id' => ['required', 'exists:users,id,deleted_at,NULL'],
             'description' => ['nullable', 'string', 'max:5000'],
             'status' => ['required', 'in:draft,published,archived'],
         ]);
+
+        $instructorValid = User::query()
+            ->whereKey($validated['instructor_id'])
+            ->where('is_active', true)
+            ->whereHas('roles', fn ($q) => $q->whereIn('name', [User::ROLE_INSTRUCTOR, User::ROLE_ADMIN]))
+            ->exists();
+        if (! $instructorValid) {
+            return back()->withErrors(['instructor_id' => 'Pengajar yang dipilih harus akun aktif dengan peran pengajar/admin.']);
+        }
 
         $course->update($validated);
         $this->activityLogService->log('admin.course_updated', "Admin memperbarui kelas {$course->title}.", $course);

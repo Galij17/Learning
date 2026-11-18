@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import { CheckCircle2, Clock, Save, Send } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AppModal from '@/Components/AppModal.vue';
+import EmptyState from '@/Components/EmptyState.vue';
 import { useToast } from '@/composables/useToast';
 
 interface TakeQuestion {
@@ -25,7 +26,7 @@ const props = defineProps<{
     quiz: { id: number; title: string; type: string; duration_minutes: number };
     attempt: { id: number; attempt_number: number; expires_at: string; remaining_seconds: number };
     questions: TakeQuestion[];
-    savedAnswers: Record<number, SavedAnswer>;
+    savedAnswers: Record<number, SavedAnswer> | SavedAnswer[];
 }>();
 
 const toast = useToast();
@@ -38,13 +39,24 @@ const showConfirmSubmit = ref(false);
 
 const answers = ref<Record<number, { selected_option_id: number | null; essay_answer: string }>>({});
 
-for (const q of props.questions) {
-    const existing = props.savedAnswers?.[q.id];
-    answers.value[q.id] = {
-        selected_option_id: existing?.selected_option_id ?? null,
-        essay_answer: existing?.essay_answer ?? '',
-    };
+function syncAnswersFromProps(): void {
+    const rawSaved = Array.isArray(props.savedAnswers)
+        ? Object.fromEntries(props.savedAnswers.map((item) => [item.question_id, item]))
+        : (props.savedAnswers ?? {});
+
+    for (const q of props.questions) {
+        const existing = rawSaved[q.id];
+        if (!answers.value[q.id]) {
+            answers.value[q.id] = {
+                selected_option_id: existing?.selected_option_id ?? null,
+                essay_answer: existing?.essay_answer ?? '',
+            };
+        }
+    }
 }
+
+syncAnswersFromProps();
+watch(() => [props.questions, props.savedAnswers], syncAnswersFromProps, { deep: true });
 
 const currentQuestion = computed(() => props.questions[currentIndex.value] ?? null);
 
@@ -70,7 +82,7 @@ let essayDebounce: ReturnType<typeof setTimeout> | null = null;
 
 async function persistAnswer(questionId: number): Promise<void> {
     const ans = answers.value[questionId];
-    if (!ans) return;
+    if (!ans || submitting.value) return;
     saving.value = true;
     try {
         const res = await window.axios.post(route('student.quizzes.autosave', [props.course.id, props.quiz.id, props.attempt.id]), {
@@ -82,8 +94,14 @@ async function persistAnswer(questionId: number): Promise<void> {
         if (typeof res.data.remaining_seconds === 'number') {
             remainingSeconds.value = Math.max(0, Math.floor(res.data.remaining_seconds));
         }
-    } catch {
-        toast.error('Gagal autosave jawaban. Periksa koneksi Anda.');
+    } catch (err: unknown) {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 422) {
+            toast.error('Waktu ujian telah berakhir atau percobaan sudah ditutup.');
+            router.visit(route('student.quizzes.result', [props.course.id, props.quiz.id, props.attempt.id]));
+        } else {
+            toast.error('Gagal autosave jawaban. Periksa koneksi Anda.');
+        }
     } finally {
         saving.value = false;
     }
@@ -94,20 +112,46 @@ function selectOption(questionId: number, optionId: number): void {
     void persistAnswer(questionId);
 }
 
+let pendingEssayQuestionId: number | null = null;
+
 function onEssayInput(questionId: number): void {
+    pendingEssayQuestionId = questionId;
     if (essayDebounce) clearTimeout(essayDebounce);
     essayDebounce = setTimeout(() => {
+        pendingEssayQuestionId = null;
         void persistAnswer(questionId);
     }, 800);
 }
 
+function flushPendingEssay(): void {
+    if (essayDebounce) {
+        clearTimeout(essayDebounce);
+        essayDebounce = null;
+    }
+    if (pendingEssayQuestionId !== null) {
+        const qId = pendingEssayQuestionId;
+        pendingEssayQuestionId = null;
+        void persistAnswer(qId);
+    }
+}
+
 async function submitExam(auto = false): Promise<void> {
     if (submitting.value) return;
+    flushPendingEssay();
+    if (countdownTimer) clearInterval(countdownTimer);
+    if (periodicSaveTimer) clearInterval(periodicSaveTimer);
+
     submitting.value = true;
     showConfirmSubmit.value = false;
 
-    if (currentQuestion.value) {
-        await persistAnswer(currentQuestion.value.id);
+    if (!auto && currentQuestion.value) {
+        await window.axios
+            .post(route('student.quizzes.autosave', [props.course.id, props.quiz.id, props.attempt.id]), {
+                question_id: currentQuestion.value.id,
+                selected_option_id: answers.value[currentQuestion.value.id]?.selected_option_id ?? null,
+                essay_answer: answers.value[currentQuestion.value.id]?.essay_answer || null,
+            })
+            .catch(() => undefined);
     }
 
     router.post(
@@ -121,7 +165,24 @@ async function submitExam(auto = false): Promise<void> {
     );
 }
 
+let removeInertiaBeforeListener: (() => void) | null = null;
+
+function handleBeforeUnload(e: BeforeUnloadEvent): void {
+    if (!submitting.value && (saving.value || pendingEssayQuestionId !== null)) {
+        flushPendingEssay();
+        e.preventDefault();
+        e.returnValue = '';
+    }
+}
+
 onMounted(() => {
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    removeInertiaBeforeListener = router.on('before', () => {
+        if (!submitting.value) {
+            flushPendingEssay();
+        }
+    });
+
     countdownTimer = setInterval(() => {
         if (remainingSeconds.value > 0) {
             remainingSeconds.value -= 1;
@@ -133,13 +194,15 @@ onMounted(() => {
     }, 1000);
 
     periodicSaveTimer = setInterval(() => {
-        if (currentQuestion.value) {
+        if (!submitting.value && currentQuestion.value) {
             void persistAnswer(currentQuestion.value.id);
         }
     }, 15000);
 });
 
 onBeforeUnmount(() => {
+    window.removeEventListener('beforeunload', handleBeforeUnload);
+    if (removeInertiaBeforeListener) removeInertiaBeforeListener();
     if (countdownTimer) clearInterval(countdownTimer);
     if (periodicSaveTimer) clearInterval(periodicSaveTimer);
     if (essayDebounce) clearTimeout(essayDebounce);
@@ -190,7 +253,14 @@ onBeforeUnmount(() => {
                 </div>
             </section>
 
-            <div class="grid gap-6 lg:grid-cols-4">
+            <EmptyState
+                v-if="questions.length === 0"
+                :icon="Clock"
+                title="Belum ada soal pada ujian ini"
+                description="Hubungi pengajar pengampu apabila daftar soal belum tampil."
+            />
+
+            <div v-else class="grid gap-6 lg:grid-cols-4">
                 <!-- Question Canvas -->
                 <section v-if="currentQuestion" class="rounded-[14px] border border-[#E2E8F0] bg-white p-6 dark:border-[#3E4F69] dark:bg-[#283548] lg:col-span-3">
                     <div class="flex items-center justify-between border-b border-[#E2E8F0] pb-3 dark:border-[#3E4F69]">

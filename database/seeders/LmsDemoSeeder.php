@@ -488,6 +488,56 @@ class LmsDemoSeeder extends Seeder
             ['essay_answer' => 'Karena request dari browser bisa dimanipulasi lewat DevTools atau HTTP client, sehingga server wajib memvalidasi hak akses, waktu ujian, dan menghitung nilai dari database.', 'score_awarded' => 40, 'feedback' => 'Jawaban tepat dan lengkap.', 'answered_at' => now()->subDays(2)]
         );
 
+        // Seed matching published exam + graded attempt for Student 1 so Grade & Certificate stay consistent after recalculation
+        $exam1 = Quiz::query()->updateOrCreate(
+            ['course_id' => $course1->id, 'title' => 'Ujian Tengah Semester: Laravel & Inertia'],
+            [
+                'lesson_id' => $lesson1->id,
+                'created_by' => $instructor1->id,
+                'description' => 'Evaluasi menyeluruh arsitektur server-driven SPA dan otorisasi.',
+                'type' => 'exam',
+                'duration_minutes' => 60,
+                'starts_at' => now()->subDays(4),
+                'ends_at' => now()->addDays(14),
+                'max_attempts' => 1,
+                'passing_score' => 70,
+                'shuffle_questions' => false,
+                'shuffle_options' => false,
+                'show_results' => true,
+                'show_explanations' => true,
+                'is_published' => true,
+            ]
+        );
+
+        $exam1->questions()->sync([
+            $q1->id => ['sort_order' => 1, 'points' => 50],
+            $q2->id => ['sort_order' => 2, 'points' => 50],
+        ]);
+
+        $examAttempt1 = QuizAttempt::query()->updateOrCreate(
+            ['quiz_id' => $exam1->id, 'student_id' => $students[0]->id, 'attempt_number' => 1],
+            [
+                'status' => 'graded',
+                'question_order' => [$q1->id, $q2->id],
+                'started_at' => now()->subDays(1)->subMinutes(35),
+                'expires_at' => now()->subDays(1)->addMinutes(25),
+                'submitted_at' => now()->subDays(1),
+                'objective_score' => 86.25,
+                'essay_score' => 0,
+                'total_score' => 86.25,
+                'percentage' => 86.25,
+                'is_passed' => true,
+                'needs_manual_grading' => false,
+                'graded_by' => $instructor1->id,
+                'graded_at' => now()->subDay(),
+            ]
+        );
+
+        QuizAnswer::query()->updateOrCreate(
+            ['quiz_attempt_id' => $examAttempt1->id, 'question_id' => $q1->id],
+            ['selected_option_id' => $q1CorrectOption?->id, 'is_correct' => true, 'score_awarded' => 50, 'answered_at' => now()->subDay()]
+        );
+
         // Grade & Certificate for Student 1
         Grade::query()->updateOrCreate(
             ['course_id' => $course1->id, 'student_id' => $students[0]->id],

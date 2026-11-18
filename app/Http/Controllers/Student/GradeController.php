@@ -16,6 +16,7 @@ class GradeController extends Controller
         $student = $request->user();
 
         $grades = Grade::query()
+            ->whereHas('course')
             ->where('student_id', $student->id)
             ->with([
                 'course:id,title,code,instructor_id,assignment_weight,quiz_weight,exam_weight,min_passing_score',
@@ -25,6 +26,7 @@ class GradeController extends Controller
             ->get();
 
         $certificatesByCourse = Certificate::query()
+            ->whereHas('course')
             ->where('student_id', $student->id)
             ->get()
             ->keyBy('course_id');

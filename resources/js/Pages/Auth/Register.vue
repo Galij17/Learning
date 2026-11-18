@@ -78,6 +78,7 @@ function submit(): void {
                             placeholder="08..."
                             class="mt-1.5 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3.5 py-2.5 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]"
                         />
+                        <p v-if="form.errors.phone" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ form.errors.phone }}</p>
                     </div>
                 </div>
 
@@ -104,6 +105,7 @@ function submit(): void {
                         placeholder="Ulangi kata sandi"
                         class="mt-1.5 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3.5 py-2.5 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]"
                     />
+                    <p v-if="form.errors.password_confirmation" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ form.errors.password_confirmation }}</p>
                 </div>
 
                 <button

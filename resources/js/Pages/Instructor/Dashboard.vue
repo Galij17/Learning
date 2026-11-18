@@ -139,7 +139,14 @@ defineProps<{
                     </Link>
                 </div>
 
-                <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <EmptyState
+                    v-if="courses.length === 0"
+                    :icon="BookOpen"
+                    title="Belum ada kelas yang diampu"
+                    description="Buat kelas baru atau hubungi administrator untuk penugasan kelas."
+                />
+
+                <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     <Link
                         v-for="course in courses.slice(0, 6)"
                         :key="course.id"

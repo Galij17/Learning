@@ -22,6 +22,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
+            $table->dropUnique(['identity_number']);
+            $table->dropIndex(['is_active']);
             $table->dropSoftDeletes();
             $table->dropColumn([
                 'identity_number',

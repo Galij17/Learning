@@ -3,6 +3,8 @@ import { computed, ref } from 'vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { ArrowLeft, Lock, Pin, Trash2 } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import ConfirmModal from '@/Components/ConfirmModal.vue';
+import InputError from '@/Components/InputError.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
 import type { Course, SharedPageProps } from '@/types';
 
@@ -35,6 +37,8 @@ const currentUser = computed(() => page.props.auth.user);
 const canModerate = computed(() => ['admin', 'instructor'].includes(currentUser.value?.role ?? ''));
 
 const replyToId = ref<number | null>(null);
+const deletingCommentId = ref<number | null>(null);
+const isDeletingComment = ref(false);
 const commentForm = useForm({
     body: '',
     parent_id: null as number | null,
@@ -60,7 +64,19 @@ function toggleLock(): void {
 }
 
 function deleteComment(commentId: number): void {
-    router.delete(route('courses.discussions.comments.destroy', [props.course.id, props.discussion.id, commentId]), { preserveScroll: true });
+    deletingCommentId.value = commentId;
+}
+
+function confirmDeleteComment(): void {
+    if (!deletingCommentId.value) return;
+    isDeletingComment.value = true;
+    router.delete(route('courses.discussions.comments.destroy', [props.course.id, props.discussion.id, deletingCommentId.value]), {
+        preserveScroll: true,
+        onFinish: () => {
+            isDeletingComment.value = false;
+            deletingCommentId.value = null;
+        },
+    });
 }
 </script>
 
@@ -163,11 +179,22 @@ function deleteComment(commentId: number): void {
                     </div>
                     <label for="c-body" class="block text-sm font-semibold">Tulis Balasan</label>
                     <textarea id="c-body" v-model="commentForm.body" rows="3" required placeholder="Tulis tanggapan Anda..." class="mt-1.5 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                    <InputError :message="commentForm.errors.body" />
                     <button type="submit" :disabled="commentForm.processing" class="mt-3 min-h-[44px] rounded-[10px] bg-[#1B2CC1] px-5 text-sm font-semibold text-white dark:bg-[#ABD2FA] dark:text-[#1E293B]">
                         {{ commentForm.processing ? 'Mengirim...' : 'Kirim Balasan' }}
                     </button>
                 </form>
             </section>
         </div>
+
+        <ConfirmModal
+            :show="Boolean(deletingCommentId)"
+            title="Hapus Komentar"
+            message="Hapus komentar ini dari diskusi?"
+            confirm-text="Hapus"
+            :processing="isDeletingComment"
+            @confirm="confirmDeleteComment"
+            @cancel="deletingCommentId = null"
+        />
     </AuthenticatedLayout>
 </template>

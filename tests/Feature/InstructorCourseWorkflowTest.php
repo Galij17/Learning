@@ -8,6 +8,8 @@ use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\Lesson;
 use App\Models\Material;
+use App\Models\Question;
+use App\Models\Quiz;
 use App\Models\Role;
 use App\Models\Submission;
 use App\Models\User;
@@ -140,5 +142,68 @@ class InstructorCourseWorkflowTest extends TestCase
 
         $this->assertEquals(92.0, (float) $submission->fresh()->score);
         $this->assertSame('graded', $submission->fresh()->status);
+    }
+
+    public function test_cross_course_lesson_cross_owner_questions_and_scoped_course_search_are_enforced(): void
+    {
+        $myCourse = Course::create([
+            'category_id' => $this->category->id,
+            'instructor_id' => $this->instructor->id,
+            'title' => 'SharedKeywordPemrograman Saya',
+            'slug' => 'shared-saya',
+            'code' => 'SH001',
+            'status' => 'published',
+        ]);
+
+        $otherCourse = Course::create([
+            'category_id' => $this->category->id,
+            'instructor_id' => $this->otherInstructor->id,
+            'title' => 'SharedKeywordPemrograman Orang Lain',
+            'slug' => 'shared-orang-lain',
+            'code' => 'SH002',
+            'status' => 'published',
+        ]);
+        $otherLesson = Lesson::create(['course_id' => $otherCourse->id, 'title' => 'Bab Asing', 'meeting_number' => 1, 'sort_order' => 1, 'is_published' => true]);
+        $otherQuestion = Question::create([
+            'course_id' => $otherCourse->id,
+            'created_by' => $this->otherInstructor->id,
+            'type' => 'essay',
+            'question_text' => 'Soal rahasia dosen lain',
+            'points' => 10,
+            'difficulty' => 'easy',
+        ]);
+
+        // Cross-course lesson_id must fail validation
+        $this->actingAs($this->instructor)
+            ->post("/instructor/courses/{$myCourse->id}/materials", [
+                'lesson_id' => $otherLesson->id,
+                'title' => 'Materi Ilegal',
+                'type' => 'text',
+                'content' => 'Konten',
+            ])
+            ->assertSessionHasErrors('lesson_id');
+
+        // Attaching another instructor's question_id must fail validation
+        $quiz = Quiz::create([
+            'course_id' => $myCourse->id,
+            'created_by' => $this->instructor->id,
+            'title' => 'Kuis Saya',
+            'type' => 'quiz',
+            'duration_minutes' => 15,
+            'max_attempts' => 1,
+            'passing_score' => 70,
+        ]);
+
+        $this->actingAs($this->instructor)
+            ->post("/instructor/courses/{$myCourse->id}/quizzes/{$quiz->id}/attach-questions", [
+                'question_ids' => [$otherQuestion->id],
+            ])
+            ->assertForbidden();
+
+        // Scoped instructor course search must NOT leak otherInstructor's course
+        $res = $this->actingAs($this->instructor)->get('/instructor/courses?search=SharedKeywordPemrograman');
+        $res->assertOk();
+        $res->assertSee('SharedKeywordPemrograman Saya');
+        $res->assertDontSee('SharedKeywordPemrograman Orang Lain');
     }
 }

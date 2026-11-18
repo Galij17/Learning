@@ -25,6 +25,7 @@ class AssignmentDeadlineReminderNotification extends Notification
             'message' => 'Tugas akan berakhir pada ' . ($this->assignment->due_at?->format('d M Y H:i') ?? '-'),
             'url' => route('student.courses.show', $this->assignment->course_id),
             'course_id' => $this->assignment->course_id,
+            'assignment_id' => $this->assignment->id,
         ];
     }
 }

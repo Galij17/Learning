@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import InputError from '@/Components/InputError.vue';
 
 const props = defineProps<{
     settings: {
@@ -41,26 +42,31 @@ function submit(): void {
                     <div>
                         <label for="st-name" class="block text-sm font-semibold">Nama Aplikasi</label>
                         <input id="st-name" v-model="form.site_name" type="text" required class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                        <InputError :message="form.errors.site_name" />
                     </div>
                     <div>
                         <label for="st-inst" class="block text-sm font-semibold">Nama Institusi</label>
                         <input id="st-inst" v-model="form.institution_name" type="text" required class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                        <InputError :message="form.errors.institution_name" />
                     </div>
                 </div>
 
                 <div>
                     <label for="st-tag" class="block text-sm font-semibold">Tagline Platform</label>
                     <input id="st-tag" v-model="form.site_tagline" type="text" class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                    <InputError :message="form.errors.site_tagline" />
                 </div>
 
                 <div class="grid gap-4 sm:grid-cols-2">
                     <div>
                         <label for="st-email" class="block text-sm font-semibold">Email Dukungan</label>
                         <input id="st-email" v-model="form.support_email" type="email" required class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                        <InputError :message="form.errors.support_email" />
                     </div>
                     <div>
                         <label for="st-pass" class="block text-sm font-semibold">Nilai Kelulusan Default (%)</label>
                         <input id="st-pass" v-model="form.default_passing_score" type="number" min="0" max="100" required class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                        <InputError :message="form.errors.default_passing_score" />
                     </div>
                 </div>
 
@@ -76,6 +82,7 @@ function submit(): void {
                         @change="(e) => (form.site_logo = (e.target as HTMLInputElement).files?.[0] ?? null)"
                         class="mt-1 block w-full text-sm"
                     />
+                    <InputError :message="form.errors.site_logo" />
                 </div>
 
                 <label class="inline-flex min-h-[44px] items-center gap-2 text-sm">

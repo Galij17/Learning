@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch, type Component } from 'vue';
 import { Link, router, usePage } from '@inertiajs/vue3';
+import { safeHttpUrl } from '@/utils/url';
 import {
     Activity,
     Award,
@@ -40,6 +41,8 @@ const { notify } = useToast();
 
 const mobileMenuOpen = ref(false);
 const notifDropdownOpen = ref(false);
+const notifMenuRef = ref<HTMLElement | null>(null);
+const loggingOut = ref(false);
 
 const user = computed(() => page.props.auth.user);
 const appSettings = computed(() => page.props.appSettings);
@@ -59,7 +62,7 @@ interface NavItem {
     label: string;
     href: string;
     routePattern: string;
-    icon: unknown;
+    icon: Component;
 }
 
 const navItems = computed<NavItem[]>(() => {
@@ -108,7 +111,13 @@ function isRouteActive(pattern: string): boolean {
 }
 
 function logout(): void {
-    router.post(route('logout'));
+    if (loggingOut.value) return;
+    loggingOut.value = true;
+    router.post(
+        route('logout'),
+        {},
+        { onFinish: () => (loggingOut.value = false) }
+    );
 }
 
 function handleEscape(e: KeyboardEvent): void {
@@ -118,8 +127,20 @@ function handleEscape(e: KeyboardEvent): void {
     }
 }
 
-onMounted(() => window.addEventListener('keydown', handleEscape));
-onUnmounted(() => window.removeEventListener('keydown', handleEscape));
+function handleDocumentClick(e: MouseEvent): void {
+    if (notifDropdownOpen.value && notifMenuRef.value && !notifMenuRef.value.contains(e.target as Node)) {
+        notifDropdownOpen.value = false;
+    }
+}
+
+onMounted(() => {
+    window.addEventListener('keydown', handleEscape);
+    document.addEventListener('click', handleDocumentClick);
+});
+onUnmounted(() => {
+    window.removeEventListener('keydown', handleEscape);
+    document.removeEventListener('click', handleDocumentClick);
+});
 </script>
 
 <template>
@@ -247,7 +268,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleEscape));
                     </button>
 
                     <!-- Notifications Dropdown -->
-                    <div class="relative">
+                    <div ref="notifMenuRef" class="relative">
                         <button
                             type="button"
                             @click="notifDropdownOpen = !notifDropdownOpen"
@@ -288,9 +309,21 @@ onUnmounted(() => window.removeEventListener('keydown', handleEscape));
                                     class="rounded-[10px] p-2.5 text-sm"
                                     :class="item.read_at ? 'bg-transparent' : 'bg-[#F8FAFC] dark:bg-[#3E4F69]/60'"
                                 >
-                                    <p class="font-semibold text-[#1E293B] dark:text-[#F8FAFC]">{{ item.data.title }}</p>
-                                    <p class="mt-0.5 line-clamp-2 text-xs text-[#475569] dark:text-[#CBD5E1]">{{ item.data.message }}</p>
-                                    <p class="mt-1 text-[11px] text-[#475569] dark:text-[#CBD5E1]">{{ item.created_at_human }}</p>
+                                    <Link
+                                        v-if="safeHttpUrl(item.data.url)"
+                                        :href="safeHttpUrl(item.data.url)!"
+                                        @click="notifDropdownOpen = false"
+                                        class="block hover:opacity-85"
+                                    >
+                                        <p class="font-semibold text-[#1E293B] dark:text-[#F8FAFC]">{{ item.data.title }}</p>
+                                        <p class="mt-0.5 line-clamp-2 text-xs text-[#475569] dark:text-[#CBD5E1]">{{ item.data.message }}</p>
+                                        <p class="mt-1 text-[11px] text-[#475569] dark:text-[#CBD5E1]">{{ item.created_at_human }}</p>
+                                    </Link>
+                                    <template v-else>
+                                        <p class="font-semibold text-[#1E293B] dark:text-[#F8FAFC]">{{ item.data.title }}</p>
+                                        <p class="mt-0.5 line-clamp-2 text-xs text-[#475569] dark:text-[#CBD5E1]">{{ item.data.message }}</p>
+                                        <p class="mt-1 text-[11px] text-[#475569] dark:text-[#CBD5E1]">{{ item.created_at_human }}</p>
+                                    </template>
                                 </li>
                             </ul>
                         </div>

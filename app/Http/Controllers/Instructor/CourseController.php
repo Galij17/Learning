@@ -36,7 +36,9 @@ class CourseController extends Controller
             ->when(! $user->isAdmin(), fn ($q) => $q->where('instructor_id', $user->id))
             ->with(['category:id,name', 'subject:id,name,code', 'academicPeriod:id,name', 'instructor:id,name'])
             ->withCount(['enrollments', 'lessons', 'assignments', 'quizzes'])
-            ->when($request->string('search')->toString(), fn ($q, $s) => $q->where('title', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%"))
+            ->when($request->string('search')->toString(), function ($q, $s) {
+                $q->where(fn ($sub) => $sub->where('title', 'like', "%{$s}%")->orWhere('code', 'like', "%{$s}%"));
+            })
             ->latest()
             ->paginate(12)
             ->withQueryString();
@@ -140,13 +142,36 @@ class CourseController extends Controller
         Gate::authorize('manageStudents', $course);
 
         $validated = $request->validate([
-            'student_id' => ['required', 'exists:users,id'],
+            'student_id' => ['required', 'exists:users,id,deleted_at,NULL'],
         ]);
 
-        Enrollment::query()->updateOrCreate(
-            ['course_id' => $course->id, 'student_id' => $validated['student_id']],
-            ['status' => 'active', 'enrolled_at' => now()]
-        );
+        $student = User::query()
+            ->whereKey($validated['student_id'])
+            ->where('is_active', true)
+            ->whereHas('roles', fn ($q) => $q->where('name', User::ROLE_STUDENT))
+            ->first();
+
+        if (! $student) {
+            return back()->with('error', 'Peserta yang dipilih harus akun siswa aktif.');
+        }
+
+        $existing = Enrollment::query()
+            ->where('course_id', $course->id)
+            ->where('student_id', $student->id)
+            ->first();
+
+        if ($existing) {
+            if ($existing->status === 'dropped') {
+                $existing->update(['status' => 'active']);
+            }
+        } else {
+            Enrollment::query()->create([
+                'course_id' => $course->id,
+                'student_id' => $student->id,
+                'status' => 'active',
+                'enrolled_at' => now(),
+            ]);
+        }
 
         return back()->with('success', 'Peserta berhasil ditambahkan ke kelas.');
     }

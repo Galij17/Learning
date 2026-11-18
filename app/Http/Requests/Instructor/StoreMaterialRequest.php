@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Instructor;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreMaterialRequest extends FormRequest
 {
@@ -13,8 +14,15 @@ class StoreMaterialRequest extends FormRequest
 
     public function rules(): array
     {
+        $courseId = $this->route('course')?->id;
+
         return [
-            'lesson_id' => ['required', 'exists:lessons,id'],
+            'lesson_id' => [
+                'required',
+                Rule::exists('lessons', 'id')
+                    ->whereNull('deleted_at')
+                    ->when($courseId !== null, fn ($q) => $q->where('course_id', $courseId)),
+            ],
             'title' => ['required', 'string', 'max:180'],
             'type' => ['required', 'in:pdf,ppt,docx,image,video,link,text'],
             'file' => [
@@ -23,7 +31,7 @@ class StoreMaterialRequest extends FormRequest
                 'max:51200',
                 'mimes:pdf,ppt,pptx,doc,docx,jpg,jpeg,png,webp,mp4,webm',
             ],
-            'video_url' => ['nullable', 'url', 'max:500'],
+            'video_url' => ['nullable', 'url:http,https', 'max:500'],
             'content' => ['nullable', 'string', 'max:50000'],
             'sort_order' => ['nullable', 'integer', 'min:1', 'max:999'],
             'is_published' => ['boolean'],

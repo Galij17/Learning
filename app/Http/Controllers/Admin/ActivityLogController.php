@@ -14,9 +14,9 @@ class ActivityLogController extends Controller
     {
         $logs = ActivityLog::query()
             ->with('user:id,name,email')
-            ->when($request->string('search')->toString(), fn ($q, $s) => $q
+            ->when($request->string('search')->toString(), fn ($q, $s) => $q->where(fn ($sub) => $sub
                 ->where('description', 'like', "%{$s}%")
-                ->orWhere('action', 'like', "%{$s}%"))
+                ->orWhere('action', 'like', "%{$s}%")))
             ->when($request->string('action')->toString(), fn ($q, $a) => $q->where('action', 'like', "{$a}%"))
             ->latest()
             ->paginate(20)

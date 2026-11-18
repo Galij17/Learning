@@ -56,8 +56,10 @@ class MaterialController extends Controller
         abort_unless((int) $material->course_id === (int) $course->id, 404);
         Gate::authorize('update', $course);
 
+        $lesson = $course->lessons()->findOrFail($request->integer('lesson_id'));
+
         $payload = [
-            'lesson_id' => $request->integer('lesson_id'),
+            'lesson_id' => $lesson->id,
             'title' => $request->string('title')->toString(),
             'type' => $request->string('type')->toString(),
             'video_url' => $request->input('video_url'),

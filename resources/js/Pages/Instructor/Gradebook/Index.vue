@@ -5,6 +5,7 @@ import { ArrowLeft, RefreshCw } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AppModal from '@/Components/AppModal.vue';
 import EmptyState from '@/Components/EmptyState.vue';
+import InputError from '@/Components/InputError.vue';
 import type { Course } from '@/types';
 
 interface GradebookRow {
@@ -33,6 +34,7 @@ const feedbackForm = useForm({
 
 function openFeedback(row: GradebookRow): void {
     editingRow.value = row;
+    feedbackForm.clearErrors();
     feedbackForm.instructor_feedback = row.instructor_feedback ?? '';
 }
 
@@ -122,6 +124,7 @@ function recalculateAll(): void {
                 <div>
                     <label for="gb-fb" class="block text-sm font-semibold">Feedback Akhir Kelas</label>
                     <textarea id="gb-fb" v-model="feedbackForm.instructor_feedback" rows="4" class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                    <InputError :message="feedbackForm.errors.instructor_feedback" />
                 </div>
                 <div class="flex justify-end gap-2">
                     <button type="button" @click="editingRow = null" class="min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-4 text-sm font-semibold dark:border-[#1B2CC1]">Batal</button>

@@ -4,6 +4,7 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import { ArrowLeft, CheckCircle2, Download, ExternalLink, FileText } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
+import { safeHttpUrl } from '@/utils/url';
 import type { Material } from '@/types';
 
 const props = defineProps<{
@@ -14,6 +15,7 @@ const props = defineProps<{
 
 const streamUrl = computed(() => route('materials.stream', props.material.id));
 const downloadUrl = computed(() => route('materials.download', props.material.id));
+const safeExternalUrl = computed(() => safeHttpUrl(props.material.video_url));
 
 const youtubeEmbedUrl = computed(() => {
     const raw = props.material.video_url ?? '';
@@ -97,8 +99,8 @@ function markCompleted(): void {
                         class="aspect-video w-full rounded-[10px]"
                     />
                     <a
-                        v-else-if="material.video_url"
-                        :href="material.video_url"
+                        v-else-if="safeExternalUrl"
+                        :href="safeExternalUrl"
                         target="_blank"
                         rel="noopener noreferrer"
                         class="inline-flex min-h-[44px] items-center gap-2 rounded-[8px] bg-[#1B2CC1] px-4 text-xs font-semibold text-white dark:bg-[#ABD2FA] dark:text-[#1E293B]"
@@ -106,11 +108,13 @@ function markCompleted(): void {
                         <ExternalLink class="h-4 w-4" aria-hidden="true" />
                         Buka Video Pembelajaran
                     </a>
+                    <p v-else class="text-sm text-[#475569] dark:text-[#CBD5E1]">Video pembelajaran belum tersedia.</p>
                 </div>
 
-                <div v-else-if="material.type === 'link' && material.video_url" class="py-6 text-center">
+                <div v-else-if="material.type === 'link'" class="py-6 text-center">
                     <a
-                        :href="material.video_url"
+                        v-if="safeExternalUrl"
+                        :href="safeExternalUrl"
                         target="_blank"
                         rel="noopener noreferrer"
                         class="inline-flex min-h-[44px] items-center gap-2 rounded-[8px] bg-[#1B2CC1] px-5 text-sm font-semibold text-white dark:bg-[#ABD2FA] dark:text-[#1E293B]"
@@ -118,6 +122,7 @@ function markCompleted(): void {
                         <ExternalLink class="h-4 w-4" aria-hidden="true" />
                         Buka Tautan Materi Eksternal
                     </a>
+                    <p v-else class="text-sm text-[#475569] dark:text-[#CBD5E1]">Tautan materi tidak valid atau belum tersedia.</p>
                 </div>
 
                 <div v-else-if="material.file_path" class="flex flex-col items-center justify-center py-10 text-center">

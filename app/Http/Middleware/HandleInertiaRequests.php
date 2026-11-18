@@ -49,6 +49,7 @@ class HandleInertiaRequests extends Middleware
                 'institution_name' => Setting::getValue('institution_name', 'Universitas Tawangmangu'),
                 'site_logo_url' => $logoPath ? Storage::disk('public')->url($logoPath) : null,
                 'allow_registration' => Setting::getValue('allow_registration', '1') === '1',
+                'demo_mode' => app()->environment(['local', 'testing']) || (bool) config('app.demo_mode'),
             ],
             'notifications' => fn () => $user ? [
                 'unread_count' => $user->unreadNotifications()->count(),

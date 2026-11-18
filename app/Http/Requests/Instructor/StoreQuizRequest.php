@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Instructor;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreQuizRequest extends FormRequest
 {
@@ -13,8 +14,15 @@ class StoreQuizRequest extends FormRequest
 
     public function rules(): array
     {
+        $courseId = $this->route('course')?->id;
+
         return [
-            'lesson_id' => ['nullable', 'exists:lessons,id'],
+            'lesson_id' => [
+                'nullable',
+                Rule::exists('lessons', 'id')
+                    ->whereNull('deleted_at')
+                    ->when($courseId !== null, fn ($q) => $q->where('course_id', $courseId)),
+            ],
             'title' => ['required', 'string', 'max:180'],
             'description' => ['nullable', 'string', 'max:5000'],
             'type' => ['required', 'in:quiz,exam'],
@@ -29,7 +37,35 @@ class StoreQuizRequest extends FormRequest
             'show_explanations' => ['boolean'],
             'is_published' => ['boolean'],
             'question_ids' => ['nullable', 'array'],
-            'question_ids.*' => ['integer', 'exists:questions,id'],
+            'question_ids.*' => [
+                'integer',
+                Rule::exists('questions', 'id')->whereNull('deleted_at'),
+            ],
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            $questionIds = $this->input('question_ids');
+            if (! is_array($questionIds) || $questionIds === [] || $this->user()?->isAdmin()) {
+                return;
+            }
+
+            $courseId = $this->route('course')?->id;
+            $allowedCount = \App\Models\Question::query()
+                ->whereIn('id', $questionIds)
+                ->where(function ($q) use ($courseId) {
+                    $q->where('created_by', $this->user()->id);
+                    if ($courseId !== null) {
+                        $q->orWhere('course_id', $courseId);
+                    }
+                })
+                ->count();
+
+            if ($allowedCount !== count(array_unique($questionIds))) {
+                $validator->errors()->add('question_ids', 'Sebagian soal yang dipilih bukan milik Anda atau kelas ini.');
+            }
+        });
     }
 }

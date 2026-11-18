@@ -4,7 +4,9 @@ import { Head, router, useForm } from '@inertiajs/vue3';
 import { BookMarked, CheckCircle2, Edit3, Plus, Trash2 } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AppModal from '@/Components/AppModal.vue';
+import ConfirmModal from '@/Components/ConfirmModal.vue';
 import EmptyState from '@/Components/EmptyState.vue';
+import InputError from '@/Components/InputError.vue';
 import PaginationBar from '@/Components/PaginationBar.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
 import type { PaginatedData, Question } from '@/types';
@@ -28,6 +30,12 @@ const typeFilter = ref(props.filters.type ?? '');
 
 const showModal = ref(false);
 const editingQuestion = ref<Question | null>(null);
+const deletingQuestionId = ref<number | null>(null);
+const isDeletingQuestion = ref(false);
+
+const filterSubjects = computed(() =>
+    props.subjects.filter((s) => !categoryId.value || s.category_id === Number(categoryId.value))
+);
 
 interface OptionInput {
     option_text: string;
@@ -91,6 +99,7 @@ function applyFilter(): void {
 function openCreate(): void {
     editingQuestion.value = null;
     form.reset();
+    form.clearErrors();
     form.category_id = props.categories[0]?.id ?? '';
     form.subject_id = '';
     form.type = 'multiple_choice';
@@ -107,6 +116,7 @@ function openCreate(): void {
 
 function openEdit(q: Question): void {
     editingQuestion.value = q;
+    form.clearErrors();
     form.category_id = q.category_id ?? '';
     form.subject_id = q.subject_id ?? '';
     form.type = q.type;
@@ -163,8 +173,19 @@ function submit(): void {
 }
 
 function deleteQuestion(id: number): void {
-    if (!confirm('Hapus soal ini dari bank soal?')) return;
-    router.delete(route('instructor.question-bank.destroy', id));
+    deletingQuestionId.value = id;
+}
+
+function confirmDeleteQuestion(): void {
+    if (!deletingQuestionId.value) return;
+    isDeletingQuestion.value = true;
+    router.delete(route('instructor.question-bank.destroy', deletingQuestionId.value), {
+        preserveScroll: true,
+        onFinish: () => {
+            isDeletingQuestion.value = false;
+            deletingQuestionId.value = null;
+        },
+    });
 }
 
 function typeLabel(type: string): string {
@@ -188,9 +209,13 @@ function typeLabel(type: string): string {
                         placeholder="Cari teks pertanyaan..."
                         class="min-h-[42px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]"
                     />
-                    <select v-model="categoryId" class="min-h-[42px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]">
+                    <select v-model="categoryId" @change="subjectId = ''" aria-label="Filter kategori soal" class="min-h-[42px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]">
                         <option value="">Semua Kategori</option>
                         <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
+                    </select>
+                    <select v-model="subjectId" aria-label="Filter mata pelajaran" class="min-h-[42px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]">
+                        <option value="">Semua Mapel</option>
+                        <option v-for="s in filterSubjects" :key="s.id" :value="s.id">{{ s.name }}</option>
                     </select>
                     <select v-model="typeFilter" class="min-h-[42px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]">
                         <option value="">Semua Tipe</option>
@@ -281,6 +306,7 @@ function typeLabel(type: string): string {
                             <option value="">Umum</option>
                             <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
                         </select>
+                        <InputError :message="form.errors.category_id" />
                     </div>
                     <div>
                         <label for="qb_sub" class="mb-1 block text-xs font-semibold">Mata Pelajaran</label>
@@ -288,6 +314,7 @@ function typeLabel(type: string): string {
                             <option value="">Pilih Mata Pelajaran</option>
                             <option v-for="s in filteredSubjects" :key="s.id" :value="s.id">{{ s.name }}</option>
                         </select>
+                        <InputError :message="form.errors.subject_id" />
                     </div>
                 </div>
 
@@ -299,10 +326,12 @@ function typeLabel(type: string): string {
                             <option value="true_false">Benar / Salah</option>
                             <option value="essay">Essay</option>
                         </select>
+                        <InputError :message="form.errors.type" />
                     </div>
                     <div>
                         <label for="qb_pts" class="mb-1 block text-xs font-semibold">Bobot Poin</label>
                         <input id="qb_pts" v-model.number="form.points" type="number" min="1" max="500" required class="w-full min-h-[42px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                        <InputError :message="form.errors.points" />
                     </div>
                     <div>
                         <label for="qb_diff" class="mb-1 block text-xs font-semibold">Tingkat Kesulitan</label>
@@ -311,12 +340,14 @@ function typeLabel(type: string): string {
                             <option value="medium">Medium</option>
                             <option value="hard">Hard</option>
                         </select>
+                        <InputError :message="form.errors.difficulty" />
                     </div>
                 </div>
 
                 <div>
                     <label for="qb_text" class="mb-1 block text-xs font-semibold">Pertanyaan</label>
                     <textarea id="qb_text" v-model="form.question_text" rows="3" required class="w-full rounded-[8px] border border-[#E2E8F0] p-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]"></textarea>
+                    <InputError :message="form.errors.question_text" />
                 </div>
 
                 <div v-if="form.type !== 'essay'" class="space-y-2">
@@ -358,6 +389,7 @@ function typeLabel(type: string): string {
                 <div>
                     <label for="qb_exp" class="mb-1 block text-xs font-semibold">Pembahasan (Opsional)</label>
                     <textarea id="qb_exp" v-model="form.explanation" rows="2" class="w-full rounded-[8px] border border-[#E2E8F0] p-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]"></textarea>
+                    <InputError :message="form.errors.explanation" />
                 </div>
 
                 <div class="flex justify-end gap-2">
@@ -368,5 +400,15 @@ function typeLabel(type: string): string {
                 </div>
             </form>
         </AppModal>
+
+        <ConfirmModal
+            :show="Boolean(deletingQuestionId)"
+            title="Hapus Soal dari Bank Soal"
+            message="Hapus soal ini dari bank soal?"
+            confirm-text="Hapus Soal"
+            :processing="isDeletingQuestion"
+            @confirm="confirmDeleteQuestion"
+            @cancel="deletingQuestionId = null"
+        />
     </AuthenticatedLayout>
 </template>

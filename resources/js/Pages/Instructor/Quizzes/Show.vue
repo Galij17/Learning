@@ -4,9 +4,12 @@ import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { ArrowLeft, BookMarked, CheckCircle2, ClipboardEdit, HelpCircle, Plus, Settings, Trash2, Users } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AppModal from '@/Components/AppModal.vue';
+import ConfirmModal from '@/Components/ConfirmModal.vue';
 import EmptyState from '@/Components/EmptyState.vue';
+import InputError from '@/Components/InputError.vue';
 import PaginationBar from '@/Components/PaginationBar.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
+import { toDateTimeLocalInput } from '@/utils/format';
 import type { PaginatedData, Question, Quiz, QuizAttempt } from '@/types';
 
 const props = defineProps<{
@@ -26,6 +29,9 @@ const showBankModal = ref(false);
 const showInlineModal = ref(false);
 const showSettingsModal = ref(false);
 const gradingAttempt = ref<QuizAttempt | null>(null);
+const detachingQuestionId = ref<number | null>(null);
+const isDetaching = ref(false);
+const essayError = ref<string | null>(null);
 
 const selectedBankIds = ref<number[]>([]);
 
@@ -50,8 +56,8 @@ const settingsForm = useForm({
     description: props.quiz.description ?? '',
     type: props.quiz.type,
     duration_minutes: props.quiz.duration_minutes,
-    starts_at: props.quiz.starts_at ? props.quiz.starts_at.slice(0, 16) : '',
-    ends_at: props.quiz.ends_at ? props.quiz.ends_at.slice(0, 16) : '',
+    starts_at: toDateTimeLocalInput(props.quiz.starts_at),
+    ends_at: toDateTimeLocalInput(props.quiz.ends_at),
     max_attempts: props.quiz.max_attempts,
     passing_score: Number(props.quiz.passing_score),
     shuffle_questions: props.quiz.shuffle_questions,
@@ -113,6 +119,31 @@ function submitBankAttach(): void {
     );
 }
 
+function openInlineModal(): void {
+    inlineForm.reset();
+    inlineForm.clearErrors();
+    showInlineModal.value = true;
+}
+
+function openSettingsModal(): void {
+    settingsForm.clearErrors();
+    settingsForm.lesson_id = props.quiz.lesson_id ?? '';
+    settingsForm.title = props.quiz.title;
+    settingsForm.description = props.quiz.description ?? '';
+    settingsForm.type = props.quiz.type;
+    settingsForm.duration_minutes = props.quiz.duration_minutes;
+    settingsForm.starts_at = toDateTimeLocalInput(props.quiz.starts_at);
+    settingsForm.ends_at = toDateTimeLocalInput(props.quiz.ends_at);
+    settingsForm.max_attempts = props.quiz.max_attempts;
+    settingsForm.passing_score = Number(props.quiz.passing_score);
+    settingsForm.shuffle_questions = props.quiz.shuffle_questions;
+    settingsForm.shuffle_options = props.quiz.shuffle_options;
+    settingsForm.show_results = props.quiz.show_results;
+    settingsForm.show_explanations = props.quiz.show_explanations;
+    settingsForm.is_published = props.quiz.is_published;
+    showSettingsModal.value = true;
+}
+
 function submitInlineQuestion(): void {
     inlineForm.post(route('instructor.quizzes.inline-question', [props.course.id, props.quiz.id]), {
         onSuccess: () => {
@@ -123,8 +154,19 @@ function submitInlineQuestion(): void {
 }
 
 function detachQuestion(questionId: number): void {
-    if (!confirm('Lepaskan soal ini dari kuis/ujian?')) return;
-    router.delete(route('instructor.quizzes.detach-question', [props.course.id, props.quiz.id, questionId]));
+    detachingQuestionId.value = questionId;
+}
+
+function confirmDetachQuestion(): void {
+    if (!detachingQuestionId.value) return;
+    isDetaching.value = true;
+    router.delete(route('instructor.quizzes.detach-question', [props.course.id, props.quiz.id, detachingQuestionId.value]), {
+        preserveScroll: true,
+        onFinish: () => {
+            isDetaching.value = false;
+            detachingQuestionId.value = null;
+        },
+    });
 }
 
 function submitSettings(): void {
@@ -136,6 +178,7 @@ function submitSettings(): void {
 }
 
 function openEssayGrading(attempt: QuizAttempt): void {
+    essayError.value = null;
     gradingAttempt.value = attempt;
     essayRows.value = (attempt.answers ?? [])
         .filter((a) => a.question?.type === 'essay')
@@ -152,6 +195,7 @@ function openEssayGrading(attempt: QuizAttempt): void {
 function submitEssayGrades(): void {
     if (!gradingAttempt.value || essayRows.value.length === 0) return;
     essaySubmitting.value = true;
+    essayError.value = null;
     router.post(
         route('instructor.quizzes.grade-essays', [props.course.id, props.quiz.id, gradingAttempt.value.id]),
         {
@@ -164,6 +208,9 @@ function submitEssayGrades(): void {
         {
             onFinish: () => {
                 essaySubmitting.value = false;
+            },
+            onError: (errors) => {
+                essayError.value = Object.values(errors)[0] ?? 'Gagal menyimpan penilaian essay. Periksa rentang skor.';
             },
             onSuccess: () => {
                 gradingAttempt.value = null;
@@ -197,7 +244,7 @@ function submitEssayGrades(): void {
                     </div>
 
                     <div class="flex flex-wrap gap-2">
-                        <button type="button" @click="showSettingsModal = true" class="inline-flex min-h-[40px] items-center gap-1.5 rounded-[8px] border border-[#1B2CC1] px-3.5 text-xs font-semibold text-[#1B2CC1] dark:border-[#ABD2FA] dark:text-[#ABD2FA]">
+                        <button type="button" @click="openSettingsModal" class="inline-flex min-h-[40px] items-center gap-1.5 rounded-[8px] border border-[#1B2CC1] px-3.5 text-xs font-semibold text-[#1B2CC1] dark:border-[#ABD2FA] dark:text-[#ABD2FA]">
                             <Settings class="h-4 w-4" aria-hidden="true" />
                             Pengaturan
                         </button>
@@ -205,7 +252,7 @@ function submitEssayGrades(): void {
                             <BookMarked class="h-4 w-4" aria-hidden="true" />
                             Ambil dari Bank Soal
                         </button>
-                        <button type="button" @click="showInlineModal = true" class="inline-flex min-h-[40px] items-center gap-1.5 rounded-[8px] bg-[#1B2CC1] px-3.5 text-xs font-semibold text-white dark:bg-[#ABD2FA] dark:text-[#1E293B]">
+                        <button type="button" @click="openInlineModal" class="inline-flex min-h-[40px] items-center gap-1.5 rounded-[8px] bg-[#1B2CC1] px-3.5 text-xs font-semibold text-white dark:bg-[#ABD2FA] dark:text-[#1E293B]">
                             <Plus class="h-4 w-4" aria-hidden="true" />
                             Buat Soal Baru
                         </button>
@@ -380,10 +427,12 @@ function submitEssayGrades(): void {
                             <option value="true_false">Benar / Salah</option>
                             <option value="essay">Essay</option>
                         </select>
+                        <InputError :message="inlineForm.errors.type" />
                     </div>
                     <div>
                         <label for="in_pts" class="mb-1 block text-xs font-semibold">Poin</label>
                         <input id="in_pts" v-model.number="inlineForm.points" type="number" min="1" required class="w-full min-h-[42px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                        <InputError :message="inlineForm.errors.points" />
                     </div>
                     <div>
                         <label for="in_diff" class="mb-1 block text-xs font-semibold">Kesulitan</label>
@@ -392,11 +441,13 @@ function submitEssayGrades(): void {
                             <option value="medium">Medium</option>
                             <option value="hard">Hard</option>
                         </select>
+                        <InputError :message="inlineForm.errors.difficulty" />
                     </div>
                 </div>
                 <div>
                     <label for="in_text" class="mb-1 block text-xs font-semibold">Pertanyaan</label>
                     <textarea id="in_text" v-model="inlineForm.question_text" rows="3" required class="w-full rounded-[8px] border border-[#E2E8F0] p-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]"></textarea>
+                    <InputError :message="inlineForm.errors.question_text" />
                 </div>
                 <div v-if="inlineForm.type !== 'essay'" class="space-y-2">
                     <span class="block text-xs font-semibold">Pilihan Jawaban</span>
@@ -404,10 +455,12 @@ function submitEssayGrades(): void {
                         <input type="radio" name="inline_correct" :checked="opt.is_correct" @change="setCorrectInline(idx)" class="h-4 w-4" />
                         <input v-model="opt.option_text" type="text" required :placeholder="`Pilihan ${idx + 1}`" class="flex-1 min-h-[40px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
                     </div>
+                    <InputError :message="inlineForm.errors.options" />
                 </div>
                 <div>
                     <label for="in_exp" class="mb-1 block text-xs font-semibold">Pembahasan (Opsional)</label>
                     <textarea id="in_exp" v-model="inlineForm.explanation" rows="2" class="w-full rounded-[8px] border border-[#E2E8F0] p-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]"></textarea>
+                    <InputError :message="inlineForm.errors.explanation" />
                 </div>
                 <div class="flex justify-end gap-2">
                     <button type="button" @click="showInlineModal = false" class="min-h-[40px] rounded-[8px] border border-[#E2E8F0] px-4 text-xs font-semibold">Batal</button>
@@ -419,6 +472,9 @@ function submitEssayGrades(): void {
         <!-- MODAL: ESSAY GRADING -->
         <AppModal :show="Boolean(gradingAttempt)" :title="`Nilai Jawaban Essay (${gradingAttempt?.student?.name ?? ''})`" @close="gradingAttempt = null">
             <form @submit.prevent="submitEssayGrades" class="space-y-4">
+                <div v-if="essayError" role="alert" class="rounded-[8px] border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300">
+                    {{ essayError }}
+                </div>
                 <div v-for="row in essayRows" :key="row.answer_id" class="space-y-2 rounded-[10px] border border-[#E2E8F0] p-3.5 dark:border-[#3E4F69]">
                     <p class="text-xs font-bold">{{ row.question_text }} (Maks {{ row.max_points }} poin)</p>
                     <div class="rounded-[8px] bg-[#F8FAFC] p-2.5 text-xs whitespace-pre-line dark:bg-[#162030]">
@@ -450,19 +506,23 @@ function submitEssayGrades(): void {
                 <div>
                     <label for="qs_title" class="mb-1 block text-xs font-semibold">Judul</label>
                     <input id="qs_title" v-model="settingsForm.title" type="text" required class="w-full min-h-[42px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                    <InputError :message="settingsForm.errors.title" />
                 </div>
                 <div class="grid gap-3 sm:grid-cols-3">
                     <div>
                         <label for="qs_dur" class="mb-1 block text-xs font-semibold">Durasi (menit)</label>
                         <input id="qs_dur" v-model.number="settingsForm.duration_minutes" type="number" min="1" required class="w-full min-h-[42px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                        <InputError :message="settingsForm.errors.duration_minutes" />
                     </div>
                     <div>
                         <label for="qs_att" class="mb-1 block text-xs font-semibold">Maks Percobaan</label>
                         <input id="qs_att" v-model.number="settingsForm.max_attempts" type="number" min="1" required class="w-full min-h-[42px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                        <InputError :message="settingsForm.errors.max_attempts" />
                     </div>
                     <div>
                         <label for="qs_pass" class="mb-1 block text-xs font-semibold">KKM</label>
                         <input id="qs_pass" v-model.number="settingsForm.passing_score" type="number" min="0" max="100" required class="w-full min-h-[42px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                        <InputError :message="settingsForm.errors.passing_score" />
                     </div>
                 </div>
                 <div class="grid gap-2 sm:grid-cols-2 text-xs">
@@ -478,5 +538,15 @@ function submitEssayGrades(): void {
                 </div>
             </form>
         </AppModal>
+
+        <ConfirmModal
+            :show="Boolean(detachingQuestionId)"
+            title="Lepaskan Soal"
+            message="Lepaskan soal ini dari kuis/ujian? Soal tetap tersimpan di Bank Soal jika berasal dari bank."
+            confirm-text="Lepaskan"
+            :processing="isDetaching"
+            @confirm="confirmDetachQuestion"
+            @cancel="detachingQuestionId = null"
+        />
     </AuthenticatedLayout>
 </template>

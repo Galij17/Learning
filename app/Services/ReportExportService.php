@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Certificate;
 use App\Models\Course;
 use App\Models\Enrollment;
+use App\Models\Grade;
 use App\Models\Setting;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Response;
@@ -22,6 +23,8 @@ class ReportExportService
     public function getLearningReportRows(?int $courseId = null, ?int $periodId = null): array
     {
         $query = Enrollment::query()
+            ->whereHas('course')
+            ->whereHas('student')
             ->with([
                 'student:id,name,email,identity_number',
                 'course:id,title,code,instructor_id,academic_period_id,category_id',
@@ -39,10 +42,16 @@ class ReportExportService
             $query->whereHas('course', fn ($q) => $q->where('academic_period_id', $periodId));
         }
 
-        return $query->get()->map(function (Enrollment $enrollment) {
-            $grade = $enrollment->course?->grades()
-                ->where('student_id', $enrollment->student_id)
-                ->first();
+        $enrollments = $query->get();
+        $gradesByKey = Grade::query()
+            ->whereIn('course_id', $enrollments->pluck('course_id')->unique())
+            ->whereIn('student_id', $enrollments->pluck('student_id')->unique())
+            ->get()
+            ->keyBy(fn (Grade $g) => "{$g->course_id}:{$g->student_id}");
+
+        return $enrollments->map(function (Enrollment $enrollment) use ($gradesByKey) {
+            /** @var Grade|null $grade */
+            $grade = $gradesByKey->get("{$enrollment->course_id}:{$enrollment->student_id}");
 
             return [
                 'identity_number' => $enrollment->student?->identity_number ?? '-',

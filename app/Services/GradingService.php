@@ -27,21 +27,26 @@ class GradingService
 
             $assignmentAvg = 0.0;
             if ($publishedAssignmentIds->isNotEmpty()) {
-                $submissions = Submission::query()
+                $submissionsByAssignment = Submission::query()
                     ->whereIn('assignment_id', $publishedAssignmentIds)
                     ->where('student_id', $student->id)
                     ->whereNotNull('score')
                     ->with('assignment:id,max_score')
-                    ->get();
+                    ->get()
+                    ->keyBy('assignment_id');
 
-                if ($submissions->isNotEmpty()) {
-                    $normalizedScores = $submissions->map(function (Submission $sub) {
-                        $max = max(1, (float) ($sub->assignment?->max_score ?? 100));
+                $sumNormalized = $publishedAssignmentIds->sum(function (int $assignmentId) use ($submissionsByAssignment) {
+                    /** @var Submission|null $sub */
+                    $sub = $submissionsByAssignment->get($assignmentId);
+                    if (! $sub) {
+                        return 0.0;
+                    }
+                    $max = max(1, (float) ($sub->assignment?->max_score ?? 100));
 
-                        return min(100, ((float) $sub->score / $max) * 100);
-                    });
-                    $assignmentAvg = round($normalizedScores->avg(), 2);
-                }
+                    return min(100, ((float) $sub->score / $max) * 100);
+                });
+
+                $assignmentAvg = round($sumNormalized / $publishedAssignmentIds->count(), 2);
             }
 
             $quizAvg = $this->calculateQuizCategoryAverage($course->id, $student->id, 'quiz');
@@ -83,7 +88,10 @@ class GradingService
 
     public function recalculateCourseGrades(Course $course, ?User $actor = null): void
     {
-        $students = $course->students()->get();
+        $students = $course->students()
+            ->wherePivot('status', '!=', 'dropped')
+            ->get();
+
         foreach ($students as $student) {
             $this->recalculateStudentGrade($course, $student, $actor);
         }
@@ -101,20 +109,18 @@ class GradingService
             return 0.0;
         }
 
-        // Best graded/submitted percentage per quiz
+        // Best finalized percentage per published quiz/exam (unattempted quizzes count as 0)
         $bestPerQuiz = QuizAttempt::query()
             ->whereIn('quiz_id', $quizIds)
             ->where('student_id', $studentId)
-            ->whereIn('status', ['submitted', 'auto_submitted', 'graded'])
+            ->where('status', 'graded')
             ->selectRaw('quiz_id, MAX(percentage) as best_percentage')
             ->groupBy('quiz_id')
-            ->pluck('best_percentage');
+            ->pluck('best_percentage', 'quiz_id');
 
-        if ($bestPerQuiz->isEmpty()) {
-            return 0.0;
-        }
+        $totalPercentage = $quizIds->sum(fn (int $qId) => (float) ($bestPerQuiz->get($qId) ?? 0.0));
 
-        return round((float) $bestPerQuiz->avg(), 2);
+        return round($totalPercentage / $quizIds->count(), 2);
     }
 
     public function toLetterGrade(float $score): string

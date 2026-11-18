@@ -4,7 +4,9 @@ import { Head, router, useForm } from '@inertiajs/vue3';
 import { Megaphone, Plus, Trash2 } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AppModal from '@/Components/AppModal.vue';
+import ConfirmModal from '@/Components/ConfirmModal.vue';
 import EmptyState from '@/Components/EmptyState.vue';
+import InputError from '@/Components/InputError.vue';
 import PaginationBar from '@/Components/PaginationBar.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
 import type { Announcement, PaginatedData } from '@/types';
@@ -15,6 +17,8 @@ defineProps<{
 
 const showModal = ref(false);
 const editing = ref<Announcement | null>(null);
+const deletingItem = ref<Announcement | null>(null);
+const isDeleting = ref(false);
 
 const form = useForm({
     title: '',
@@ -25,11 +29,13 @@ const form = useForm({
 function openCreate(): void {
     editing.value = null;
     form.reset();
+    form.clearErrors();
     showModal.value = true;
 }
 
 function openEdit(item: Announcement): void {
     editing.value = item;
+    form.clearErrors();
     form.title = item.title;
     form.content = item.content;
     form.is_pinned = item.is_pinned;
@@ -45,9 +51,19 @@ function submit(): void {
 }
 
 function remove(item: Announcement): void {
-    if (confirm(`Hapus pengumuman "${item.title}"?`)) {
-        router.delete(route('admin.announcements.destroy', item.id));
-    }
+    deletingItem.value = item;
+}
+
+function confirmRemove(): void {
+    if (!deletingItem.value) return;
+    isDeleting.value = true;
+    router.delete(route('admin.announcements.destroy', deletingItem.value.id), {
+        preserveScroll: true,
+        onFinish: () => {
+            isDeleting.value = false;
+            deletingItem.value = null;
+        },
+    });
 }
 </script>
 
@@ -96,10 +112,12 @@ function remove(item: Announcement): void {
                 <div>
                     <label for="ga-title" class="block text-sm font-semibold">Judul</label>
                     <input id="ga-title" v-model="form.title" type="text" required class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                    <InputError :message="form.errors.title" />
                 </div>
                 <div>
                     <label for="ga-content" class="block text-sm font-semibold">Isi Pengumuman</label>
                     <textarea id="ga-content" v-model="form.content" rows="5" required class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                    <InputError :message="form.errors.content" />
                 </div>
                 <label class="inline-flex min-h-[44px] items-center gap-2 text-sm">
                     <input v-model="form.is_pinned" type="checkbox" class="h-4 w-4 rounded" />
@@ -111,5 +129,15 @@ function remove(item: Announcement): void {
                 </div>
             </form>
         </AppModal>
+
+        <ConfirmModal
+            :show="Boolean(deletingItem)"
+            title="Hapus Pengumuman"
+            :message="`Hapus pengumuman &quot;${deletingItem?.title ?? ''}&quot;?`"
+            confirm-text="Hapus"
+            :processing="isDeleting"
+            @confirm="confirmRemove"
+            @cancel="deletingItem = null"
+        />
     </AuthenticatedLayout>
 </template>

@@ -72,8 +72,8 @@ class UserController extends Controller
     {
         DB::transaction(function () use ($request) {
             $user = User::query()->create([
-                'name' => $request->string('name')->toString(),
-                'email' => $request->string('email')->toString(),
+                'name' => trim($request->string('name')->toString()),
+                'email' => strtolower(trim($request->string('email')->toString())),
                 'identity_number' => $request->input('identity_number'),
                 'phone' => $request->input('phone'),
                 'bio' => $request->input('bio'),
@@ -95,13 +95,17 @@ class UserController extends Controller
     {
         DB::transaction(function () use ($request, $user) {
             $user->update([
-                'name' => $request->string('name')->toString(),
-                'email' => $request->string('email')->toString(),
+                'name' => trim($request->string('name')->toString()),
+                'email' => strtolower(trim($request->string('email')->toString())),
                 'identity_number' => $request->input('identity_number'),
                 'phone' => $request->input('phone'),
                 'bio' => $request->input('bio'),
                 'is_active' => $request->boolean('is_active', true),
             ]);
+
+            if (! $user->is_active) {
+                $user->tokens()->delete();
+            }
 
             $role = Role::query()->where('name', $request->string('role')->toString())->firstOrFail();
             $user->roles()->sync([$role->id]);
@@ -119,6 +123,9 @@ class UserController extends Controller
         }
 
         $user->update(['is_active' => ! $user->is_active]);
+        if (! $user->is_active) {
+            $user->tokens()->delete();
+        }
         $statusText = $user->is_active ? 'mengaktifkan' : 'menonaktifkan';
         $this->activityLogService->log('admin.user_toggled', "Admin {$statusText} akun {$user->name}.", $user);
 
@@ -132,6 +139,7 @@ class UserController extends Controller
         ]);
 
         $user->update(['password' => Hash::make($validated['password'])]);
+        $user->tokens()->delete();
         $this->activityLogService->log('admin.password_reset', "Reset kata sandi untuk akun {$user->name}.", $user);
 
         return back()->with('success', "Kata sandi {$user->name} berhasil direset.");
@@ -143,6 +151,7 @@ class UserController extends Controller
             return back()->with('error', 'Anda tidak dapat menghapus akun yang sedang digunakan.');
         }
 
+        $user->tokens()->delete();
         $user->delete();
         $this->activityLogService->log('admin.user_deleted', "Menghapus akun pengguna {$user->name}.", $user);
 

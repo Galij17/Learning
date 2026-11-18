@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Instructor;
 
 use App\Http\Controllers\Controller;
 use App\Models\Course;
+use App\Models\Enrollment;
 use App\Models\QuizAttempt;
 use App\Models\Submission;
 use Illuminate\Http\Request;
@@ -48,10 +49,17 @@ class DashboardController extends Controller
             'pending_essays_count' => QuizAttempt::whereHas('quiz', fn ($q) => $q->whereIn('course_id', $courseIds))->where('needs_manual_grading', true)->count(),
         ];
 
+        $avgProgressByCourse = Enrollment::query()
+            ->whereIn('course_id', $courseIds)
+            ->where('status', '!=', 'dropped')
+            ->selectRaw('course_id, AVG(progress_percentage) as avg_progress')
+            ->groupBy('course_id')
+            ->pluck('avg_progress', 'course_id');
+
         $chartCourses = $courses->take(6)->map(fn (Course $c) => [
             'label' => $c->code,
             'students' => $c->enrollments_count,
-            'avg_progress' => round((float) $c->enrollments()->avg('progress_percentage'), 1),
+            'avg_progress' => round((float) ($avgProgressByCourse[$c->id] ?? 0), 1),
         ]);
 
         return Inertia::render('Instructor/Dashboard', [

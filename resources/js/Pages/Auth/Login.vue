@@ -8,6 +8,7 @@ import type { SharedPageProps } from '@/types';
 const page = usePage<SharedPageProps>();
 const { isDark, toggleTheme } = useTheme();
 const appSettings = computed(() => page.props.appSettings);
+const flash = computed(() => page.props.flash);
 
 const form = useForm({
     email: '',
@@ -54,6 +55,20 @@ function fillDemo(email: string): void {
             </div>
 
             <div class="rounded-[14px] border border-[#E2E8F0] bg-white p-6 shadow-sm dark:border-[#3E4F69] dark:bg-[#283548] sm:p-7">
+                <div
+                    v-if="flash?.error || flash?.warning || flash?.success"
+                    class="mb-4 rounded-[8px] border px-3.5 py-2.5 text-xs font-medium"
+                    :class="
+                        flash?.error
+                            ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300'
+                            : flash?.warning
+                              ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300'
+                              : 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300'
+                    "
+                >
+                    {{ flash?.error || flash?.warning || flash?.success }}
+                </div>
+
                 <h1 class="text-xl font-bold">Masuk ke Portal Belajar</h1>
                 <p class="mt-1 text-sm text-[#475569] dark:text-[#CBD5E1]">Masukkan email dan kata sandi akun Anda.</p>
 
@@ -111,8 +126,8 @@ function fillDemo(email: string): void {
                     </button>
                 </form>
 
-                <!-- Quick Demo Account Selector -->
-                <div class="mt-6 border-t border-[#E2E8F0] pt-4 dark:border-[#3E4F69]">
+                <!-- Quick Demo Account Selector (only enabled in local/testing/demo mode) -->
+                <div v-if="appSettings.demo_mode" class="mt-6 border-t border-[#E2E8F0] pt-4 dark:border-[#3E4F69]">
                     <p class="text-xs font-semibold text-[#475569] dark:text-[#CBD5E1]">Isi cepat akun demo (kata sandi: Password123!):</p>
                     <div class="mt-2.5 grid grid-cols-3 gap-2">
                         <button

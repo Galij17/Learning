@@ -8,11 +8,11 @@ Platform ini dirancang dengan arsitektur modular yang bersih, Role-Based Access 
 
 ## Arsitektur & Stack Teknologi
 
-- **Backend:** PHP 8.2+, Laravel 12 (`app/Services`, `app/Policies`, `app/Http/Requests`, `app/Http/Controllers`, `app/Http/Middleware`, `app/Notifications`)
-- **Frontend:** Vue 3 `<script setup lang="ts">`, Inertia.js v2+, TypeScript, Pinia, Tailwind CSS v4, Lucide Icons, Chart.js (`vue-chartjs`)
+- **Backend:** PHP 8.2+, Laravel 12 (`app/Services`, `app/Policies`, `app/Http/Requests`, `app/Http/Controllers`, `app/Http/Middleware`, `app/Notifications`), Laravel Sanctum 4 (REST API `/api/*`)
+- **Frontend:** Vue 3 `<script setup lang="ts">`, Inertia.js v3 (`@inertiajs/vue3` ^3.11 + `inertiajs/inertia-laravel` ^3.7), TypeScript, Pinia, Tailwind CSS v4, Lucide Icons, Chart.js (`vue-chartjs`)
 - **Database:** MySQL / MariaDB dengan foreign key constraints, composite unique indexes, indexing, dan soft deletes
 - **Ekspor & Dokumen:** `barryvdh/laravel-dompdf` (Laporan PDF & Sertifikat PDF), `openspout/openspout` (Ekspor `.xlsx`)
-- **Real-time Ready:** Laravel Reverb (`laravel/reverb`, `laravel-echo`, `pusher-js`) dengan fallback penuh pada Database Notifications
+- **Notifikasi & API:** Database Notifications (`notifications`) + REST API berbasis Sanctum token (`/api/*`) untuk klien mobile/eksternal (terintegrasi opsional dengan Laravel Echo / Pusher)
 
 ---
 
@@ -122,6 +122,7 @@ erDiagram
    APP_NAME=VerdantLMS
    APP_URL=http://127.0.0.1:8000
    APP_TIMEZONE=Asia/Jakarta
+   LMS_DEMO_MODE=true
 
    DB_CONNECTION=mysql
    DB_HOST=127.0.0.1
@@ -131,7 +132,9 @@ erDiagram
    DB_PASSWORD=
 
    QUEUE_CONNECTION=sync
+   SANCTUM_EXPIRATION=43200
    ```
+   > Set `LMS_DEMO_MODE=false` pada environment production agar shortcut akun demo tidak tampil di halaman login dan seeder demo tidak ikut berjalan.
 
 4. **Generate application key, jalankan migrasi, storage link, dan seeder demo:**
    ```bash
@@ -147,14 +150,15 @@ erDiagram
    ```
    Akses aplikasi melalui `http://127.0.0.1:8000`.
 
-6. *(Opsional)* **Real-time WebSocket & Scheduler Deadline Reminder:**
-   - Untuk mengaktifkan notifikasi WebSocket real-time:
-     ```bash
-     php artisan reverb:start
-     ```
-   - Untuk menjalankan pengingat tenggat tugas secara terjadwal:
+6. *(Opsional)* **Scheduler Deadline Reminder & Queue:**
+   - Untuk menjalankan pengingat tenggat tugas secara terjadwal (`routes/console.php`):
      ```bash
      php artisan lms:send-deadline-reminders
+     php artisan schedule:work
+     ```
+   - Jika menggunakan queue driver selain `sync`, jalankan worker:
+     ```bash
+     php artisan queue:work
      ```
 
 ---

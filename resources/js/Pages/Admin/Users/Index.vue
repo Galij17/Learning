@@ -4,7 +4,9 @@ import { Head, router, useForm } from '@inertiajs/vue3';
 import { KeyRound, Plus, Power, Search, Trash2, Users } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AppModal from '@/Components/AppModal.vue';
+import ConfirmModal from '@/Components/ConfirmModal.vue';
 import EmptyState from '@/Components/EmptyState.vue';
+import InputError from '@/Components/InputError.vue';
 import PaginationBar from '@/Components/PaginationBar.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
 import type { PaginatedData } from '@/types';
@@ -64,6 +66,7 @@ function applyFilters(): void {
 function openCreate(): void {
     editingUser.value = null;
     userForm.reset();
+    userForm.clearErrors();
     userForm.is_active = true;
     userForm.role = 'student';
     showFormModal.value = true;
@@ -71,6 +74,7 @@ function openCreate(): void {
 
 function openEdit(user: UserRow): void {
     editingUser.value = user;
+    userForm.clearErrors();
     userForm.name = user.name;
     userForm.email = user.email;
     userForm.identity_number = user.identity_number ?? '';
@@ -104,9 +108,13 @@ function toggleStatus(user: UserRow): void {
     router.patch(route('admin.users.toggle-status', user.id), {}, { preserveScroll: true });
 }
 
+const deletingUser = ref<UserRow | null>(null);
+const isDeletingUser = ref(false);
+
 function openResetPassword(user: UserRow): void {
     resetTarget.value = user;
     resetForm.reset();
+    resetForm.clearErrors();
 }
 
 function submitResetPassword(): void {
@@ -120,9 +128,19 @@ function submitResetPassword(): void {
 }
 
 function deleteUser(user: UserRow): void {
-    if (confirm(`Hapus akun ${user.name}?`)) {
-        router.delete(route('admin.users.destroy', user.id), { preserveScroll: true });
-    }
+    deletingUser.value = user;
+}
+
+function confirmDeleteUser(): void {
+    if (!deletingUser.value) return;
+    isDeletingUser.value = true;
+    router.delete(route('admin.users.destroy', deletingUser.value.id), {
+        preserveScroll: true,
+        onFinish: () => {
+            isDeletingUser.value = false;
+            deletingUser.value = null;
+        },
+    });
 }
 </script>
 
@@ -261,6 +279,7 @@ function deleteUser(user: UserRow): void {
                         <select id="u-role" v-model="userForm.role" class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]">
                             <option v-for="r in roles" :key="r.name" :value="r.name">{{ r.display_name }}</option>
                         </select>
+                        <InputError :message="userForm.errors.role" />
                     </div>
                 </div>
                 <div v-if="!editingUser">
@@ -292,6 +311,7 @@ function deleteUser(user: UserRow): void {
                 <div>
                     <label for="rp-pwc" class="block text-sm font-semibold">Konfirmasi Kata Sandi Baru</label>
                     <input id="rp-pwc" v-model="resetForm.password_confirmation" type="password" required class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                    <InputError :message="resetForm.errors.password_confirmation" />
                 </div>
                 <div class="flex justify-end gap-2">
                     <button type="button" @click="resetTarget = null" class="min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-4 text-sm font-semibold dark:border-[#1B2CC1]">Batal</button>
@@ -299,5 +319,15 @@ function deleteUser(user: UserRow): void {
                 </div>
             </form>
         </AppModal>
+
+        <ConfirmModal
+            :show="Boolean(deletingUser)"
+            title="Hapus Akun Pengguna"
+            :message="`Hapus akun ${deletingUser?.name ?? ''} (${deletingUser?.email ?? ''})?`"
+            confirm-text="Hapus Akun"
+            :processing="isDeletingUser"
+            @confirm="confirmDeleteUser"
+            @cancel="deletingUser = null"
+        />
     </AuthenticatedLayout>
 </template>

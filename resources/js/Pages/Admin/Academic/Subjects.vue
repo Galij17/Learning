@@ -4,7 +4,9 @@ import { Head, router, useForm } from '@inertiajs/vue3';
 import { BookOpen, Plus, Trash2 } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AppModal from '@/Components/AppModal.vue';
+import ConfirmModal from '@/Components/ConfirmModal.vue';
 import EmptyState from '@/Components/EmptyState.vue';
+import InputError from '@/Components/InputError.vue';
 import PaginationBar from '@/Components/PaginationBar.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
 import type { PaginatedData, Subject } from '@/types';
@@ -19,6 +21,8 @@ const search = ref(props.filters.search ?? '');
 const categoryFilter = ref(props.filters.category_id ?? '');
 const showModal = ref(false);
 const editing = ref<Subject | null>(null);
+const deletingSubj = ref<Subject | null>(null);
+const isDeleting = ref(false);
 
 const form = useForm({
     category_id: props.categories[0]?.id ?? '',
@@ -35,6 +39,7 @@ function applyFilters(): void {
 function openCreate(): void {
     editing.value = null;
     form.reset();
+    form.clearErrors();
     form.category_id = props.categories[0]?.id ?? '';
     form.is_active = true;
     showModal.value = true;
@@ -42,6 +47,7 @@ function openCreate(): void {
 
 function openEdit(subj: Subject): void {
     editing.value = subj;
+    form.clearErrors();
     form.category_id = subj.category_id;
     form.code = subj.code;
     form.name = subj.name;
@@ -59,9 +65,19 @@ function submit(): void {
 }
 
 function remove(subj: Subject): void {
-    if (confirm(`Hapus mata pelajaran ${subj.code} - ${subj.name}?`)) {
-        router.delete(route('admin.subjects.destroy', subj.id));
-    }
+    deletingSubj.value = subj;
+}
+
+function confirmRemove(): void {
+    if (!deletingSubj.value) return;
+    isDeleting.value = true;
+    router.delete(route('admin.subjects.destroy', deletingSubj.value.id), {
+        preserveScroll: true,
+        onFinish: () => {
+            isDeleting.value = false;
+            deletingSubj.value = null;
+        },
+    });
 }
 </script>
 
@@ -130,21 +146,24 @@ function remove(subj: Subject): void {
                     <select id="s-cat" v-model="form.category_id" required class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]">
                         <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
                     </select>
+                    <InputError :message="form.errors.category_id" />
                 </div>
                 <div class="grid gap-4 sm:grid-cols-2">
                     <div>
                         <label for="s-code" class="block text-sm font-semibold">Kode</label>
                         <input id="s-code" v-model="form.code" type="text" required placeholder="Contoh: IF-301" class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
-                        <p v-if="form.errors.code" class="mt-1 text-xs text-red-600">{{ form.errors.code }}</p>
+                        <InputError :message="form.errors.code" />
                     </div>
                     <div>
                         <label for="s-name" class="block text-sm font-semibold">Nama</label>
                         <input id="s-name" v-model="form.name" type="text" required class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                        <InputError :message="form.errors.name" />
                     </div>
                 </div>
                 <div>
                     <label for="s-desc" class="block text-sm font-semibold">Deskripsi</label>
                     <textarea id="s-desc" v-model="form.description" rows="2" class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                    <InputError :message="form.errors.description" />
                 </div>
                 <label class="inline-flex min-h-[44px] items-center gap-2 text-sm">
                     <input v-model="form.is_active" type="checkbox" class="h-4 w-4 rounded" />
@@ -156,5 +175,15 @@ function remove(subj: Subject): void {
                 </div>
             </form>
         </AppModal>
+
+        <ConfirmModal
+            :show="Boolean(deletingSubj)"
+            title="Hapus Mata Pelajaran"
+            :message="`Hapus mata pelajaran ${deletingSubj?.code ?? ''} - ${deletingSubj?.name ?? ''}?`"
+            confirm-text="Hapus"
+            :processing="isDeleting"
+            @confirm="confirmRemove"
+            @cancel="deletingSubj = null"
+        />
     </AuthenticatedLayout>
 </template>

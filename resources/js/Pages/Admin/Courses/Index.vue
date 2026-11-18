@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { GraduationCap, Plus, Trash2 } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AppModal from '@/Components/AppModal.vue';
+import ConfirmModal from '@/Components/ConfirmModal.vue';
 import EmptyState from '@/Components/EmptyState.vue';
+import InputError from '@/Components/InputError.vue';
 import PaginationBar from '@/Components/PaginationBar.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
 import type { Course, PaginatedData } from '@/types';
@@ -24,6 +26,8 @@ const periodFilter = ref(props.filters.period_id ?? '');
 
 const showModal = ref(false);
 const editing = ref<Course | null>(null);
+const deletingCourse = ref<Course | null>(null);
+const isDeleting = ref(false);
 
 const form = useForm({
     title: '',
@@ -34,6 +38,20 @@ const form = useForm({
     description: '',
     status: 'published',
 });
+
+const filteredSubjects = computed(() => {
+    if (!form.category_id) return props.subjects;
+    return props.subjects.filter((s) => Number(s.category_id) === Number(form.category_id));
+});
+
+watch(
+    () => form.category_id,
+    () => {
+        if (form.subject_id && !filteredSubjects.value.some((s) => Number(s.id) === Number(form.subject_id))) {
+            form.subject_id = '';
+        }
+    }
+);
 
 function applyFilters(): void {
     router.get(
@@ -46,6 +64,7 @@ function applyFilters(): void {
 function openCreate(): void {
     editing.value = null;
     form.reset();
+    form.clearErrors();
     form.category_id = props.categories[0]?.id ?? '';
     form.academic_period_id = props.periods.find((p) => p.is_active)?.id ?? '';
     form.instructor_id = props.instructors[0]?.id ?? '';
@@ -55,6 +74,7 @@ function openCreate(): void {
 
 function openEdit(c: Course): void {
     editing.value = c;
+    form.clearErrors();
     form.title = c.title;
     form.category_id = c.category_id;
     form.subject_id = c.subject_id ?? '';
@@ -74,9 +94,19 @@ function submit(): void {
 }
 
 function remove(c: Course): void {
-    if (confirm(`Hapus kelas "${c.title}"?`)) {
-        router.delete(route('admin.courses.destroy', c.id));
-    }
+    deletingCourse.value = c;
+}
+
+function confirmRemove(): void {
+    if (!deletingCourse.value) return;
+    isDeleting.value = true;
+    router.delete(route('admin.courses.destroy', deletingCourse.value.id), {
+        preserveScroll: true,
+        onFinish: () => {
+            isDeleting.value = false;
+            deletingCourse.value = null;
+        },
+    });
 }
 </script>
 
@@ -156,6 +186,7 @@ function remove(c: Course): void {
                 <div>
                     <label for="ac-title" class="block text-sm font-semibold">Judul Kelas</label>
                     <input id="ac-title" v-model="form.title" type="text" required class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                    <InputError :message="form.errors.title" />
                 </div>
                 <div class="grid gap-4 sm:grid-cols-2">
                     <div>
@@ -163,13 +194,15 @@ function remove(c: Course): void {
                         <select id="ac-cat" v-model="form.category_id" required class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]">
                             <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
                         </select>
+                        <InputError :message="form.errors.category_id" />
                     </div>
                     <div>
                         <label for="ac-subj" class="block text-sm font-semibold">Mata Pelajaran</label>
                         <select id="ac-subj" v-model="form.subject_id" class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]">
                             <option value="">Opsional</option>
-                            <option v-for="s in subjects" :key="s.id" :value="s.id">{{ s.name }}</option>
+                            <option v-for="s in filteredSubjects" :key="s.id" :value="s.id">{{ s.name }}</option>
                         </select>
+                        <InputError :message="form.errors.subject_id" />
                     </div>
                 </div>
                 <div class="grid gap-4 sm:grid-cols-2">
@@ -178,12 +211,14 @@ function remove(c: Course): void {
                         <select id="ac-inst" v-model="form.instructor_id" required class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]">
                             <option v-for="inst in instructors" :key="inst.id" :value="inst.id">{{ inst.name }}</option>
                         </select>
+                        <InputError :message="form.errors.instructor_id" />
                     </div>
                     <div>
                         <label for="ac-per" class="block text-sm font-semibold">Periode</label>
                         <select id="ac-per" v-model="form.academic_period_id" class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]">
                             <option v-for="p in periods" :key="p.id" :value="p.id">{{ p.name }}</option>
                         </select>
+                        <InputError :message="form.errors.academic_period_id" />
                     </div>
                 </div>
                 <div>
@@ -193,10 +228,12 @@ function remove(c: Course): void {
                         <option value="draft">Draft</option>
                         <option value="archived">Archived</option>
                     </select>
+                    <InputError :message="form.errors.status" />
                 </div>
                 <div>
                     <label for="ac-desc" class="block text-sm font-semibold">Deskripsi</label>
                     <textarea id="ac-desc" v-model="form.description" rows="3" class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                    <InputError :message="form.errors.description" />
                 </div>
                 <div class="flex justify-end gap-2">
                     <button type="button" @click="showModal = false" class="min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-4 text-sm font-semibold dark:border-[#1B2CC1]">Batal</button>
@@ -204,5 +241,15 @@ function remove(c: Course): void {
                 </div>
             </form>
         </AppModal>
+
+        <ConfirmModal
+            :show="Boolean(deletingCourse)"
+            title="Hapus Kelas"
+            :message="`Hapus kelas &quot;${deletingCourse?.title ?? ''}&quot;? Data materi, tugas, dan nilai kelas terkait akan ikut terhapus.`"
+            confirm-text="Hapus Kelas"
+            :processing="isDeleting"
+            @confirm="confirmRemove"
+            @cancel="deletingCourse = null"
+        />
     </AuthenticatedLayout>
 </template>

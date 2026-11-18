@@ -1,22 +1,38 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { Bell, CheckCheck } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import EmptyState from '@/Components/EmptyState.vue';
 import PaginationBar from '@/Components/PaginationBar.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
+import { safeHttpUrl } from '@/utils/url';
 import type { NotificationItem, PaginatedData } from '@/types';
 
 defineProps<{
     items: PaginatedData<NotificationItem>;
 }>();
 
+const processingAction = ref(false);
+
 function markRead(id: string): void {
-    router.post(route('notifications.read', id), {}, { preserveScroll: true });
+    if (processingAction.value) return;
+    processingAction.value = true;
+    router.post(
+        route('notifications.read', id),
+        {},
+        { preserveScroll: true, onFinish: () => (processingAction.value = false) }
+    );
 }
 
 function markAllRead(): void {
-    router.post(route('notifications.read-all'), {}, { preserveScroll: true });
+    if (processingAction.value) return;
+    processingAction.value = true;
+    router.post(
+        route('notifications.read-all'),
+        {},
+        { preserveScroll: true, onFinish: () => (processingAction.value = false) }
+    );
 }
 </script>
 
@@ -62,12 +78,14 @@ function markAllRead(): void {
                                 <p class="font-semibold text-[#1E293B] dark:text-[#F8FAFC]">{{ item.data.title }}</p>
                             </div>
                             <p class="mt-1 text-sm text-[#475569] dark:text-[#CBD5E1]">{{ item.data.message }}</p>
-                            <p class="mt-1 text-xs text-[#475569] dark:text-[#CBD5E1]">{{ item.created_at }} ({{ item.created_at_human }})</p>
+                            <p class="mt-1 text-xs text-[#475569] dark:text-[#CBD5E1]">
+                                {{ item.created_at ?? '' }} <span v-if="item.created_at_human">({{ item.created_at_human }})</span>
+                            </p>
                         </div>
                         <div class="flex shrink-0 items-center gap-2">
                             <Link
-                                v-if="item.data.url"
-                                :href="item.data.url"
+                                v-if="safeHttpUrl(item.data.url)"
+                                :href="safeHttpUrl(item.data.url)!"
                                 class="inline-flex min-h-[40px] items-center rounded-[8px] bg-[#1B2CC1] px-3.5 text-xs font-semibold text-white hover:bg-[#142194] dark:bg-[#ABD2FA] dark:text-[#1E293B]"
                             >
                                 Buka
@@ -75,8 +93,9 @@ function markAllRead(): void {
                             <button
                                 v-if="!item.read_at"
                                 type="button"
+                                :disabled="processingAction"
                                 @click="markRead(item.id)"
-                                class="inline-flex min-h-[40px] items-center rounded-[8px] border border-[#E2E8F0] px-3 text-xs font-semibold hover:bg-[#E2E8F0] dark:border-[#1B2CC1] dark:hover:bg-[#3E4F69]"
+                                class="inline-flex min-h-[40px] items-center rounded-[8px] border border-[#E2E8F0] px-3 text-xs font-semibold hover:bg-[#E2E8F0] disabled:opacity-60 dark:border-[#1B2CC1] dark:hover:bg-[#3E4F69]"
                             >
                                 Tandai Dibaca
                             </button>

@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Instructor;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreAssignmentRequest extends FormRequest
 {
@@ -13,8 +14,15 @@ class StoreAssignmentRequest extends FormRequest
 
     public function rules(): array
     {
+        $courseId = $this->route('course')?->id;
+
         return [
-            'lesson_id' => ['nullable', 'exists:lessons,id'],
+            'lesson_id' => [
+                'nullable',
+                Rule::exists('lessons', 'id')
+                    ->whereNull('deleted_at')
+                    ->when($courseId !== null, fn ($q) => $q->where('course_id', $courseId)),
+            ],
             'title' => ['required', 'string', 'max:180'],
             'description' => ['required', 'string', 'max:20000'],
             'attachment' => ['nullable', 'file', 'max:20480', 'mimes:pdf,doc,docx,ppt,pptx,zip,jpg,jpeg,png'],

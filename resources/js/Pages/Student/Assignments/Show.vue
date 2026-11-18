@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { ArrowLeft, Download, Upload } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
+import { formatDate } from '@/utils/format';
 import type { Assignment, Submission } from '@/types';
 
 const props = defineProps<{
@@ -17,18 +19,13 @@ const form = useForm({
     file: null as File | null,
 });
 
-const canSubmit = !props.submission || props.submission.status !== 'graded';
-const lockedByDeadline = props.isPastDue && !props.assignment.allow_late_submission;
+const canSubmit = computed(() => !props.submission || props.submission.status !== 'graded');
+const lockedByDeadline = computed(() => props.isPastDue && !props.assignment.allow_late_submission);
 
 function submit(): void {
     form.post(route('student.assignments.submit', [props.course.id, props.assignment.id]), {
         forceFormData: true,
     });
-}
-
-function formatDate(val?: string | null): string {
-    if (!val) return 'Tidak ada batas waktu';
-    return new Date(val).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
 }
 </script>
 

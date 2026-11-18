@@ -181,7 +181,7 @@ class QuizController extends Controller
             ->with('success', $isAuto ? 'Waktu habis, ujian dikirim otomatis.' : 'Jawaban ujian berhasil dikirim.');
     }
 
-    public function result(Request $request, Course $course, Quiz $quiz, QuizAttempt $attempt): Response
+    public function result(Request $request, Course $course, Quiz $quiz, QuizAttempt $attempt): Response|RedirectResponse
     {
         abort_unless(
             (int) $quiz->course_id === (int) $course->id
@@ -193,17 +193,30 @@ class QuizController extends Controller
         $canManage = Gate::allows('manage', $quiz);
         abort_unless($isOwner || $canManage, 403);
 
+        if ($attempt->status === 'in_progress' && ! $canManage) {
+            if (now()->gt($attempt->expires_at)) {
+                $attempt = $this->quizAttemptService->submitAttempt($attempt, true);
+            } else {
+                return redirect()->route('student.quizzes.take', [$course->id, $quiz->id, $attempt->id])
+                    ->with('warning', 'Selesaikan dan kirim ujian terlebih dahulu sebelum melihat hasil.');
+            }
+        }
+
+        $quizPointsByQuestion = $quiz->questions()
+            ->get(['questions.id'])
+            ->mapWithKeys(fn (Question $q) => [$q->id => (float) ($q->pivot?->points ?? $q->points)]);
+
         $attempt->load(['answers.question.options', 'answers.selectedOption', 'student:id,name']);
 
         $showAnswers = $canManage || $quiz->show_results;
         $showExplanations = $canManage || $quiz->show_explanations;
 
-        $reviewItems = $showAnswers ? $attempt->answers->map(function ($ans) use ($showExplanations) {
+        $reviewItems = $showAnswers ? $attempt->answers->map(function ($ans) use ($showExplanations, $quizPointsByQuestion) {
             $q = $ans->question;
             return [
                 'question_text' => $q?->question_text,
                 'type' => $q?->type,
-                'points' => (float) ($q?->points ?? 0),
+                'points' => (float) ($q ? ($quizPointsByQuestion->get($q->id) ?? $q->points) : 0),
                 'selected_option_text' => $ans->selectedOption?->option_text,
                 'correct_option_text' => $q?->options?->firstWhere('is_correct', true)?->option_text,
                 'essay_answer' => $ans->essay_answer,

@@ -21,9 +21,12 @@ import {
 } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AppModal from '@/Components/AppModal.vue';
+import ConfirmModal from '@/Components/ConfirmModal.vue';
 import EmptyState from '@/Components/EmptyState.vue';
+import InputError from '@/Components/InputError.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
 import { useToast } from '@/composables/useToast';
+import { formatDate } from '@/utils/format';
 import type { Course, Lesson } from '@/types';
 
 const props = defineProps<{
@@ -138,14 +141,40 @@ async function copyCourseCode(): Promise<void> {
     }
 }
 
+const pendingConfirm = ref<{
+    title: string;
+    message: string;
+    confirmText: string;
+    danger?: boolean;
+    onConfirm: (done: () => void) => void;
+} | null>(null);
+const isConfirming = ref(false);
+
+function runPendingConfirm(): void {
+    if (!pendingConfirm.value) return;
+    isConfirming.value = true;
+    pendingConfirm.value.onConfirm(() => {
+        isConfirming.value = false;
+        pendingConfirm.value = null;
+    });
+}
+
 function regenerateCode(): void {
-    if (!confirm('Generate ulang kode gabung? Kode lama tidak akan berlaku lagi.')) return;
-    router.post(route('instructor.courses.regenerate-code', props.course.id));
+    pendingConfirm.value = {
+        title: 'Generate Ulang Kode Kelas',
+        message: 'Generate ulang kode gabung? Kode lama tidak akan berlaku lagi.',
+        confirmText: 'Generate Ulang',
+        danger: false,
+        onConfirm: (done) => {
+            router.post(route('instructor.courses.regenerate-code', props.course.id), {}, { preserveScroll: true, onFinish: done });
+        },
+    };
 }
 
 function openNewLesson(): void {
     editingLesson.value = null;
     lessonForm.reset();
+    lessonForm.clearErrors();
     lessonForm.meeting_number = (props.course.lessons?.length ?? 0) + 1;
     lessonForm.is_published = true;
     showLessonModal.value = true;
@@ -153,6 +182,7 @@ function openNewLesson(): void {
 
 function openEditLesson(lesson: Lesson): void {
     editingLesson.value = lesson;
+    lessonForm.clearErrors();
     lessonForm.title = lesson.title;
     lessonForm.description = lesson.description ?? '';
     lessonForm.meeting_number = lesson.meeting_number;
@@ -178,12 +208,19 @@ function submitLesson(): void {
 }
 
 function deleteLesson(lessonId: number): void {
-    if (!confirm('Hapus bab ini beserta seluruh materi di dalamnya?')) return;
-    router.delete(route('instructor.lessons.destroy', [props.course.id, lessonId]));
+    pendingConfirm.value = {
+        title: 'Hapus Bab',
+        message: 'Hapus bab ini beserta seluruh materi di dalamnya?',
+        confirmText: 'Hapus Bab',
+        onConfirm: (done) => {
+            router.delete(route('instructor.lessons.destroy', [props.course.id, lessonId]), { preserveScroll: true, onFinish: done });
+        },
+    };
 }
 
 function openMaterialModal(lessonId?: number): void {
     materialForm.reset();
+    materialForm.clearErrors();
     materialForm.lesson_id = lessonId ?? props.course.lessons?.[0]?.id ?? '';
     materialForm.type = 'pdf';
     materialForm.sort_order = 1;
@@ -202,8 +239,14 @@ function submitMaterial(): void {
 }
 
 function deleteMaterial(materialId: number): void {
-    if (!confirm('Hapus materi ini?')) return;
-    router.delete(route('instructor.materials.destroy', [props.course.id, materialId]));
+    pendingConfirm.value = {
+        title: 'Hapus Materi',
+        message: 'Hapus materi ini?',
+        confirmText: 'Hapus Materi',
+        onConfirm: (done) => {
+            router.delete(route('instructor.materials.destroy', [props.course.id, materialId]), { preserveScroll: true, onFinish: done });
+        },
+    };
 }
 
 function submitAssignment(): void {
@@ -217,8 +260,14 @@ function submitAssignment(): void {
 }
 
 function deleteAssignment(assignmentId: number): void {
-    if (!confirm('Hapus tugas ini? Data pengumpulan siswa ikut terhapus.')) return;
-    router.delete(route('instructor.assignments.destroy', [props.course.id, assignmentId]));
+    pendingConfirm.value = {
+        title: 'Hapus Tugas',
+        message: 'Hapus tugas ini? Data pengumpulan siswa ikut terhapus.',
+        confirmText: 'Hapus Tugas',
+        onConfirm: (done) => {
+            router.delete(route('instructor.assignments.destroy', [props.course.id, assignmentId]), { preserveScroll: true, onFinish: done });
+        },
+    };
 }
 
 function submitQuiz(): void {
@@ -231,8 +280,14 @@ function submitQuiz(): void {
 }
 
 function deleteQuiz(quizId: number): void {
-    if (!confirm('Hapus kuis/ujian ini?')) return;
-    router.delete(route('instructor.quizzes.destroy', [props.course.id, quizId]));
+    pendingConfirm.value = {
+        title: 'Hapus Kuis / Ujian',
+        message: 'Hapus kuis/ujian ini?',
+        confirmText: 'Hapus',
+        onConfirm: (done) => {
+            router.delete(route('instructor.quizzes.destroy', [props.course.id, quizId]), { preserveScroll: true, onFinish: done });
+        },
+    };
 }
 
 function submitEnroll(): void {
@@ -245,8 +300,14 @@ function submitEnroll(): void {
 }
 
 function removeStudent(studentId: number): void {
-    if (!confirm('Keluarkan peserta ini dari kelas?')) return;
-    router.delete(route('instructor.courses.students.remove', [props.course.id, studentId]));
+    pendingConfirm.value = {
+        title: 'Keluarkan Peserta',
+        message: 'Keluarkan peserta ini dari kelas?',
+        confirmText: 'Keluarkan',
+        onConfirm: (done) => {
+            router.delete(route('instructor.courses.students.remove', [props.course.id, studentId]), { preserveScroll: true, onFinish: done });
+        },
+    };
 }
 
 function submitAnnouncement(): void {
@@ -259,19 +320,20 @@ function submitAnnouncement(): void {
 }
 
 function deleteAnnouncement(announcementId: number): void {
-    if (!confirm('Hapus pengumuman ini?')) return;
-    router.delete(route('instructor.announcements.destroy', [props.course.id, announcementId]));
+    pendingConfirm.value = {
+        title: 'Hapus Pengumuman',
+        message: 'Hapus pengumuman ini?',
+        confirmText: 'Hapus',
+        onConfirm: (done) => {
+            router.delete(route('instructor.announcements.destroy', [props.course.id, announcementId]), { preserveScroll: true, onFinish: done });
+        },
+    };
 }
 
 function submitSettings(): void {
     settingsForm.post(route('instructor.courses.update', props.course.id), {
         forceFormData: true,
     });
-}
-
-function formatDate(val?: string | null): string {
-    if (!val) return '-';
-    return new Date(val).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
 }
 </script>
 
@@ -707,14 +769,17 @@ function formatDate(val?: string | null): string {
                 <div>
                     <label for="l_title" class="mb-1 block text-xs font-semibold">Judul Bab</label>
                     <input id="l_title" v-model="lessonForm.title" type="text" required class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                    <InputError :message="lessonForm.errors.title" />
                 </div>
                 <div>
                     <label for="l_num" class="mb-1 block text-xs font-semibold">Nomor Pertemuan</label>
                     <input id="l_num" v-model.number="lessonForm.meeting_number" type="number" min="1" required class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                    <InputError :message="lessonForm.errors.meeting_number" />
                 </div>
                 <div>
                     <label for="l_desc" class="mb-1 block text-xs font-semibold">Ringkasan</label>
                     <textarea id="l_desc" v-model="lessonForm.description" rows="2" class="w-full rounded-[8px] border border-[#E2E8F0] p-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]"></textarea>
+                    <InputError :message="lessonForm.errors.description" />
                 </div>
                 <label class="flex items-center gap-2 text-sm">
                     <input v-model="lessonForm.is_published" type="checkbox" class="h-4 w-4 rounded" />
@@ -735,11 +800,13 @@ function formatDate(val?: string | null): string {
                     <select id="m_lesson" v-model="materialForm.lesson_id" required class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]">
                         <option v-for="l in course.lessons" :key="l.id" :value="l.id">Pertemuan {{ l.meeting_number }}: {{ l.title }}</option>
                     </select>
+                    <InputError :message="materialForm.errors.lesson_id" />
                 </div>
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div>
                         <label for="m_title" class="mb-1 block text-xs font-semibold">Judul Materi</label>
                         <input id="m_title" v-model="materialForm.title" type="text" required class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                        <InputError :message="materialForm.errors.title" />
                     </div>
                     <div>
                         <label for="m_type" class="mb-1 block text-xs font-semibold">Tipe Materi</label>
@@ -752,20 +819,23 @@ function formatDate(val?: string | null): string {
                             <option value="link">Tautan Eksternal</option>
                             <option value="text">Artikel Teks</option>
                         </select>
+                        <InputError :message="materialForm.errors.type" />
                     </div>
                 </div>
                 <div v-if="['pdf', 'ppt', 'docx', 'image', 'video'].includes(materialForm.type)">
                     <label for="m_file" class="mb-1 block text-xs font-semibold">Unggah File (Privat & Aman)</label>
                     <input id="m_file" type="file" @change="materialForm.file = ($event.target as HTMLInputElement).files?.[0] ?? null" class="w-full text-xs" />
-                    <p v-if="materialForm.errors.file" class="mt-1 text-xs text-[#DC2626]">{{ materialForm.errors.file }}</p>
+                    <InputError :message="materialForm.errors.file" />
                 </div>
                 <div v-if="['video', 'link'].includes(materialForm.type)">
                     <label for="m_url" class="mb-1 block text-xs font-semibold">URL Video / Tautan</label>
                     <input id="m_url" v-model="materialForm.video_url" type="url" placeholder="https://..." class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                    <InputError :message="materialForm.errors.video_url" />
                 </div>
                 <div v-if="materialForm.type === 'text'">
                     <label for="m_content" class="mb-1 block text-xs font-semibold">Konten Teks</label>
                     <textarea id="m_content" v-model="materialForm.content" rows="4" class="w-full rounded-[8px] border border-[#E2E8F0] p-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]"></textarea>
+                    <InputError :message="materialForm.errors.content" />
                 </div>
                 <div class="flex justify-end gap-2">
                     <button type="button" @click="showMaterialModal = false" class="min-h-[40px] rounded-[8px] border border-[#E2E8F0] px-4 text-xs font-semibold">Batal</button>
@@ -780,19 +850,23 @@ function formatDate(val?: string | null): string {
                 <div>
                     <label for="a_title" class="mb-1 block text-xs font-semibold">Judul Tugas</label>
                     <input id="a_title" v-model="assignmentForm.title" type="text" required class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                    <InputError :message="assignmentForm.errors.title" />
                 </div>
                 <div>
                     <label for="a_desc" class="mb-1 block text-xs font-semibold">Instruksi Tugas</label>
                     <textarea id="a_desc" v-model="assignmentForm.description" rows="3" required class="w-full rounded-[8px] border border-[#E2E8F0] p-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]"></textarea>
+                    <InputError :message="assignmentForm.errors.description" />
                 </div>
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div>
                         <label for="a_due" class="mb-1 block text-xs font-semibold">Batas Waktu</label>
                         <input id="a_due" v-model="assignmentForm.due_at" type="datetime-local" class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                        <InputError :message="assignmentForm.errors.due_at" />
                     </div>
                     <div>
                         <label for="a_max" class="mb-1 block text-xs font-semibold">Nilai Maksimal</label>
                         <input id="a_max" v-model.number="assignmentForm.max_score" type="number" min="1" max="1000" required class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                        <InputError :message="assignmentForm.errors.max_score" />
                     </div>
                 </div>
                 <div class="grid gap-3 sm:grid-cols-2">
@@ -803,10 +877,12 @@ function formatDate(val?: string | null): string {
                             <option value="file">Hanya File</option>
                             <option value="text">Hanya Teks</option>
                         </select>
+                        <InputError :message="assignmentForm.errors.submission_type" />
                     </div>
                     <div>
                         <label for="a_att" class="mb-1 block text-xs font-semibold">Lampiran Soal (Opsional)</label>
                         <input id="a_att" type="file" @change="assignmentForm.attachment = ($event.target as HTMLInputElement).files?.[0] ?? null" class="w-full text-xs" />
+                        <InputError :message="assignmentForm.errors.attachment" />
                     </div>
                 </div>
                 <label class="flex items-center gap-2 text-sm">
@@ -827,6 +903,7 @@ function formatDate(val?: string | null): string {
                     <div>
                         <label for="q_title" class="mb-1 block text-xs font-semibold">Judul Kuis / Ujian</label>
                         <input id="q_title" v-model="quizForm.title" type="text" required class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                        <InputError :message="quizForm.errors.title" />
                     </div>
                     <div>
                         <label for="q_type" class="mb-1 block text-xs font-semibold">Jenis Evaluasi</label>
@@ -834,30 +911,36 @@ function formatDate(val?: string | null): string {
                             <option value="quiz">Kuis</option>
                             <option value="exam">Ujian</option>
                         </select>
+                        <InputError :message="quizForm.errors.type" />
                     </div>
                 </div>
                 <div class="grid gap-3 sm:grid-cols-3">
                     <div>
                         <label for="q_dur" class="mb-1 block text-xs font-semibold">Durasi (menit)</label>
                         <input id="q_dur" v-model.number="quizForm.duration_minutes" type="number" min="1" max="360" required class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                        <InputError :message="quizForm.errors.duration_minutes" />
                     </div>
                     <div>
                         <label for="q_att" class="mb-1 block text-xs font-semibold">Maks Percobaan</label>
                         <input id="q_att" v-model.number="quizForm.max_attempts" type="number" min="1" max="20" required class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                        <InputError :message="quizForm.errors.max_attempts" />
                     </div>
                     <div>
                         <label for="q_pass" class="mb-1 block text-xs font-semibold">KKM</label>
                         <input id="q_pass" v-model.number="quizForm.passing_score" type="number" min="0" max="100" required class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                        <InputError :message="quizForm.errors.passing_score" />
                     </div>
                 </div>
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div>
                         <label for="q_start" class="mb-1 block text-xs font-semibold">Mulai (Opsional)</label>
                         <input id="q_start" v-model="quizForm.starts_at" type="datetime-local" class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                        <InputError :message="quizForm.errors.starts_at" />
                     </div>
                     <div>
                         <label for="q_end" class="mb-1 block text-xs font-semibold">Selesai (Opsional)</label>
                         <input id="q_end" v-model="quizForm.ends_at" type="datetime-local" class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                        <InputError :message="quizForm.errors.ends_at" />
                     </div>
                 </div>
                 <div class="grid gap-2 sm:grid-cols-2 text-xs">
@@ -884,6 +967,7 @@ function formatDate(val?: string | null): string {
                             {{ s.name }} ({{ s.identity_number || s.email }})
                         </option>
                     </select>
+                    <InputError :message="enrollForm.errors.student_id" />
                 </div>
                 <div class="flex justify-end gap-2">
                     <button type="button" @click="showEnrollModal = false" class="min-h-[40px] rounded-[8px] border border-[#E2E8F0] px-4 text-xs font-semibold">Batal</button>
@@ -898,10 +982,12 @@ function formatDate(val?: string | null): string {
                 <div>
                     <label for="an_title" class="mb-1 block text-xs font-semibold">Judul Pengumuman</label>
                     <input id="an_title" v-model="announcementForm.title" type="text" required class="w-full min-h-[44px] rounded-[8px] border border-[#E2E8F0] px-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]" />
+                    <InputError :message="announcementForm.errors.title" />
                 </div>
                 <div>
                     <label for="an_body" class="mb-1 block text-xs font-semibold">Isi Pengumuman</label>
                     <textarea id="an_body" v-model="announcementForm.content" rows="4" required class="w-full rounded-[8px] border border-[#E2E8F0] p-3 text-sm dark:border-[#1B2CC1] dark:bg-[#162030]"></textarea>
+                    <InputError :message="announcementForm.errors.content" />
                 </div>
                 <label class="flex items-center gap-2 text-sm">
                     <input v-model="announcementForm.is_pinned" type="checkbox" class="h-4 w-4 rounded" />
@@ -913,5 +999,16 @@ function formatDate(val?: string | null): string {
                 </div>
             </form>
         </AppModal>
+
+        <ConfirmModal
+            :show="Boolean(pendingConfirm)"
+            :title="pendingConfirm?.title ?? 'Konfirmasi Aksi'"
+            :message="pendingConfirm?.message ?? ''"
+            :confirm-text="pendingConfirm?.confirmText ?? 'Lanjutkan'"
+            :danger="pendingConfirm?.danger ?? true"
+            :processing="isConfirming"
+            @confirm="runPendingConfirm"
+            @cancel="pendingConfirm = null"
+        />
     </AuthenticatedLayout>
 </template>

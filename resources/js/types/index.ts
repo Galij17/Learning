@@ -20,6 +20,7 @@ export interface AppSettings {
     institution_name: string;
     site_logo_url: string | null;
     allow_registration: boolean;
+    demo_mode?: boolean;
 }
 
 export interface NotificationItem {

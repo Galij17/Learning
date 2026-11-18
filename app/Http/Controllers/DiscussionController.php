@@ -9,6 +9,7 @@ use App\Services\ActivityLogService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -86,7 +87,10 @@ class DiscussionController extends Controller
 
         $validated = $request->validate([
             'body' => ['required', 'string', 'max:5000'],
-            'parent_id' => ['nullable', 'exists:comments,id'],
+            'parent_id' => [
+                'nullable',
+                Rule::exists('comments', 'id')->where('discussion_id', $discussion->id)->whereNull('deleted_at'),
+            ],
         ]);
 
         Comment::query()->create([

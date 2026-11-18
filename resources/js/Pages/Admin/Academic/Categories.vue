@@ -4,7 +4,9 @@ import { Head, router, useForm } from '@inertiajs/vue3';
 import { FolderTree, Plus, Trash2 } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AppModal from '@/Components/AppModal.vue';
+import ConfirmModal from '@/Components/ConfirmModal.vue';
 import EmptyState from '@/Components/EmptyState.vue';
+import InputError from '@/Components/InputError.vue';
 import PaginationBar from '@/Components/PaginationBar.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
 import type { Category, PaginatedData } from '@/types';
@@ -17,6 +19,8 @@ const props = defineProps<{
 const search = ref(props.filters.search ?? '');
 const showModal = ref(false);
 const editing = ref<Category | null>(null);
+const deletingCat = ref<Category | null>(null);
+const isDeleting = ref(false);
 
 const form = useForm({
     name: '',
@@ -31,12 +35,14 @@ function applySearch(): void {
 function openCreate(): void {
     editing.value = null;
     form.reset();
+    form.clearErrors();
     form.is_active = true;
     showModal.value = true;
 }
 
 function openEdit(cat: Category): void {
     editing.value = cat;
+    form.clearErrors();
     form.name = cat.name;
     form.description = cat.description ?? '';
     form.is_active = cat.is_active;
@@ -56,9 +62,19 @@ function submit(): void {
 }
 
 function remove(cat: Category): void {
-    if (confirm(`Hapus kategori "${cat.name}"?`)) {
-        router.delete(route('admin.categories.destroy', cat.id));
-    }
+    deletingCat.value = cat;
+}
+
+function confirmRemove(): void {
+    if (!deletingCat.value) return;
+    isDeleting.value = true;
+    router.delete(route('admin.categories.destroy', deletingCat.value.id), {
+        preserveScroll: true,
+        onFinish: () => {
+            isDeleting.value = false;
+            deletingCat.value = null;
+        },
+    });
 }
 </script>
 
@@ -127,6 +143,7 @@ function remove(cat: Category): void {
                 <div>
                     <label for="cat-desc" class="block text-sm font-semibold">Deskripsi</label>
                     <textarea id="cat-desc" v-model="form.description" rows="3" class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                    <InputError :message="form.errors.description" />
                 </div>
                 <label class="inline-flex min-h-[44px] items-center gap-2 text-sm">
                     <input v-model="form.is_active" type="checkbox" class="h-4 w-4 rounded" />
@@ -138,5 +155,15 @@ function remove(cat: Category): void {
                 </div>
             </form>
         </AppModal>
+
+        <ConfirmModal
+            :show="Boolean(deletingCat)"
+            title="Hapus Kategori"
+            :message="`Hapus kategori &quot;${deletingCat?.name ?? ''}&quot;?`"
+            confirm-text="Hapus"
+            :processing="isDeleting"
+            @confirm="confirmRemove"
+            @cancel="deletingCat = null"
+        />
     </AuthenticatedLayout>
 </template>

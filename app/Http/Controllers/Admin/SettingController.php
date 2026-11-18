@@ -8,6 +8,7 @@ use App\Services\ActivityLogService;
 use App\Services\FileStorageService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -45,24 +46,26 @@ class SettingController extends Controller
             'support_email' => ['required', 'email', 'max:150'],
             'allow_registration' => ['boolean'],
             'default_passing_score' => ['required', 'integer', 'min:0', 'max:100'],
-            'site_logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp,svg', 'max:2048'],
+            'site_logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
         ]);
 
-        Setting::setValue('site_name', $validated['site_name'], 'branding');
-        Setting::setValue('site_tagline', $validated['site_tagline'] ?? '', 'branding');
-        Setting::setValue('institution_name', $validated['institution_name'], 'branding');
-        Setting::setValue('support_email', $validated['support_email'], 'general');
-        Setting::setValue('allow_registration', $request->boolean('allow_registration'), 'auth', 'boolean');
-        Setting::setValue('default_passing_score', $validated['default_passing_score'], 'academic', 'integer');
+        DB::transaction(function () use ($request, $validated) {
+            Setting::setValue('site_name', $validated['site_name'], 'branding');
+            Setting::setValue('site_tagline', $validated['site_tagline'] ?? '', 'branding');
+            Setting::setValue('institution_name', $validated['institution_name'], 'branding');
+            Setting::setValue('support_email', $validated['support_email'], 'general');
+            Setting::setValue('allow_registration', $request->boolean('allow_registration'), 'auth', 'boolean');
+            Setting::setValue('default_passing_score', $validated['default_passing_score'], 'academic', 'integer');
 
-        if ($request->hasFile('site_logo')) {
-            $oldLogo = Setting::getValue('site_logo_path', '');
-            $this->fileStorageService->deleteIfExists($oldLogo, 'public');
-            $path = $this->fileStorageService->storePublic($request->file('site_logo'), 'branding');
-            Setting::setValue('site_logo_path', $path, 'branding');
-        }
+            if ($request->hasFile('site_logo')) {
+                $oldLogo = Setting::getValue('site_logo_path', '');
+                $this->fileStorageService->deleteIfExists($oldLogo, 'public');
+                $path = $this->fileStorageService->storePublic($request->file('site_logo'), 'branding');
+                Setting::setValue('site_logo_path', $path, 'branding');
+            }
 
-        $this->activityLogService->log('admin.settings_updated', 'Memperbarui konfigurasi dan branding aplikasi.');
+            $this->activityLogService->log('admin.settings_updated', 'Memperbarui konfigurasi dan branding aplikasi.');
+        });
 
         return back()->with('success', 'Pengaturan aplikasi berhasil disimpan.');
     }

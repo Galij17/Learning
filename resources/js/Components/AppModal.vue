@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, watch } from 'vue';
 import { X } from 'lucide-vue-next';
 
 interface Props {
@@ -17,13 +17,23 @@ const emit = defineEmits<{
     (e: 'close'): void;
 }>();
 
-const maxWidthClass = {
-    sm: 'max-w-sm',
-    md: 'max-w-md',
-    lg: 'max-w-lg',
-    xl: 'max-w-xl',
-    '2xl': 'max-w-2xl',
-}[props.maxWidth];
+const maxWidthClass = computed(
+    () =>
+        ({
+            sm: 'max-w-sm',
+            md: 'max-w-md',
+            lg: 'max-w-lg',
+            xl: 'max-w-xl',
+            '2xl': 'max-w-2xl',
+        })[props.maxWidth]
+);
+
+watch(
+    () => props.show,
+    (isOpen) => {
+        document.body.classList.toggle('overflow-hidden', isOpen);
+    }
+);
 
 function handleEscape(e: KeyboardEvent): void {
     if (e.key === 'Escape' && props.show) {
@@ -32,7 +42,10 @@ function handleEscape(e: KeyboardEvent): void {
 }
 
 onMounted(() => window.addEventListener('keydown', handleEscape));
-onUnmounted(() => window.removeEventListener('keydown', handleEscape));
+onUnmounted(() => {
+    window.removeEventListener('keydown', handleEscape);
+    document.body.classList.remove('overflow-hidden');
+});
 </script>
 
 <template>

@@ -33,59 +33,62 @@ class QuizAttemptService
             throw ValidationException::withMessages(['quiz' => 'Batas waktu pengerjaan ujian telah berakhir.']);
         }
 
-        // Resume existing active attempt if not expired
-        $inProgress = QuizAttempt::query()
-            ->where('quiz_id', $quiz->id)
-            ->where('student_id', $student->id)
-            ->where('status', 'in_progress')
-            ->first();
+        return DB::transaction(function () use ($quiz, $student) {
+            // Lock existing attempts for this student+quiz to prevent concurrent duplicate starts
+            $existingAttempts = QuizAttempt::query()
+                ->where('quiz_id', $quiz->id)
+                ->where('student_id', $student->id)
+                ->lockForUpdate()
+                ->get();
 
-        if ($inProgress) {
-            if ($now->gt($inProgress->expires_at)) {
-                $this->submitAttempt($inProgress, true);
-            } else {
-                return $inProgress->fresh(['answers']);
+            $inProgress = $existingAttempts->firstWhere('status', 'in_progress');
+
+            if ($inProgress) {
+                if (now()->gt($inProgress->expires_at)) {
+                    $this->submitAttempt($inProgress, true);
+                } else {
+                    return $inProgress->fresh(['answers']);
+                }
             }
-        }
 
-        $completedCount = QuizAttempt::query()
-            ->where('quiz_id', $quiz->id)
-            ->where('student_id', $student->id)
-            ->count();
+            $completedCount = QuizAttempt::query()
+                ->where('quiz_id', $quiz->id)
+                ->where('student_id', $student->id)
+                ->count();
 
-        if ($completedCount >= $quiz->max_attempts) {
-            throw ValidationException::withMessages([
-                'quiz' => "Anda telah mencapai batas maksimal {$quiz->max_attempts} kali percobaan.",
-            ]);
-        }
-
-        $questions = $quiz->questions()->with('options')->get();
-        if ($questions->isEmpty()) {
-            throw ValidationException::withMessages([
-                'quiz' => 'Belum ada soal yang ditambahkan pada kuis/ujian ini.',
-            ]);
-        }
-
-        $questionIds = $questions->pluck('id')->all();
-        if ($quiz->shuffle_questions) {
-            shuffle($questionIds);
-        }
-
-        $optionOrders = [];
-        foreach ($questions as $question) {
-            $optIds = $question->options->pluck('id')->all();
-            if ($quiz->shuffle_options && count($optIds) > 1) {
-                shuffle($optIds);
+            if ($completedCount >= $quiz->max_attempts) {
+                throw ValidationException::withMessages([
+                    'quiz' => "Anda telah mencapai batas maksimal {$quiz->max_attempts} kali percobaan.",
+                ]);
             }
-            $optionOrders[$question->id] = $optIds;
-        }
 
-        $expiresAt = $now->copy()->addMinutes($quiz->duration_minutes);
-        if ($quiz->ends_at && $quiz->ends_at->lt($expiresAt)) {
-            $expiresAt = $quiz->ends_at->copy();
-        }
+            $questions = $quiz->questions()->with('options')->get();
+            if ($questions->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'quiz' => 'Belum ada soal yang ditambahkan pada kuis/ujian ini.',
+                ]);
+            }
 
-        return DB::transaction(function () use ($quiz, $student, $completedCount, $questionIds, $optionOrders, $now, $expiresAt) {
+            $questionIds = $questions->pluck('id')->all();
+            if ($quiz->shuffle_questions) {
+                shuffle($questionIds);
+            }
+
+            $optionOrders = [];
+            foreach ($questions as $question) {
+                $optIds = $question->options->pluck('id')->all();
+                if ($quiz->shuffle_options && count($optIds) > 1) {
+                    shuffle($optIds);
+                }
+                $optionOrders[$question->id] = $optIds;
+            }
+
+            $now = now();
+            $expiresAt = $now->copy()->addMinutes($quiz->duration_minutes);
+            if ($quiz->ends_at && $quiz->ends_at->lt($expiresAt)) {
+                $expiresAt = $quiz->ends_at->copy();
+            }
+
             $attempt = QuizAttempt::query()->create([
                 'quiz_id' => $quiz->id,
                 'student_id' => $student->id,
@@ -119,6 +122,12 @@ class QuizAttemptService
             throw ValidationException::withMessages(['attempt' => 'Percobaan ujian ini sudah dikirim.']);
         }
 
+        // Verify question belongs to this quiz
+        $belongsToQuiz = $attempt->quiz()->whereHas('questions', fn ($q) => $q->where('questions.id', $question->id))->exists();
+        if (! $belongsToQuiz) {
+            throw ValidationException::withMessages(['question_id' => 'Soal ini tidak terdaftar pada kuis/ujian tersebut.']);
+        }
+
         // 15-second network latency grace window; beyond that, auto-submit
         if (now()->gt($attempt->expires_at->copy()->addSeconds(15))) {
             $this->submitAttempt($attempt, true);
@@ -146,11 +155,13 @@ class QuizAttemptService
 
     public function submitAttempt(QuizAttempt $attempt, bool $autoSubmitted = false): QuizAttempt
     {
-        if ($attempt->status !== 'in_progress') {
-            return $attempt->fresh(['answers']);
-        }
-
         return DB::transaction(function () use ($attempt, $autoSubmitted) {
+            $lockedAttempt = QuizAttempt::query()->whereKey($attempt->id)->lockForUpdate()->firstOrFail();
+            if ($lockedAttempt->status !== 'in_progress') {
+                return $lockedAttempt->fresh(['answers']);
+            }
+            $attempt = $lockedAttempt;
+
             $quiz = $attempt->quiz()->with(['course', 'questions.options'])->firstOrFail();
             $answersByQuestion = $attempt->answers()->get()->keyBy('question_id');
 
@@ -167,6 +178,11 @@ class QuizAttemptService
 
                 if ($question->type === 'essay') {
                     $hasEssay = true;
+                    // Ensure an answer row exists even for unanswered essays so instructors can always grade/finalize
+                    QuizAnswer::query()->updateOrCreate(
+                        ['quiz_attempt_id' => $attempt->id, 'question_id' => $question->id],
+                        ['score_awarded' => $answer?->score_awarded ?? 0.0]
+                    );
                     continue;
                 }
 
@@ -241,16 +257,26 @@ class QuizAttemptService
 
             foreach ($essayGrades as $item) {
                 $answer = QuizAnswer::query()
+                    ->with('question:id,type')
                     ->where('quiz_attempt_id', $attempt->id)
                     ->where('id', $item['answer_id'])
+                    ->whereHas('question', fn ($q) => $q->where('type', 'essay'))
                     ->first();
 
                 if (! $answer) {
-                    continue;
+                    throw ValidationException::withMessages([
+                        'grades' => 'Jawaban essay tidak ditemukan pada percobaan ujian ini.',
+                    ]);
                 }
 
                 $maxPts = $questionPoints->get($answer->question_id, 100.0);
-                $clampedScore = max(0.0, min((float) $item['score'], $maxPts));
+                if ((float) $item['score'] > $maxPts) {
+                    throw ValidationException::withMessages([
+                        'grades' => "Skor essay melebihi bobot maksimal soal ({$maxPts}).",
+                    ]);
+                }
+
+                $clampedScore = max(0.0, (float) $item['score']);
 
                 $answer->update([
                     'score_awarded' => $clampedScore,

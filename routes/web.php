@@ -59,7 +59,13 @@ Route::middleware('guest')->group(function () {
         ->name('login.store');
 
     Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
-    Route::post('/register', [RegisteredUserController::class, 'store'])->name('register.store');
+    Route::post('/register', [RegisteredUserController::class, 'store'])
+        ->middleware('throttle:register')
+        ->name('register.store');
+
+    Route::get('/reset-password/{token}', fn (string $token) => redirect()->route('login')
+        ->with('warning', 'Silakan hubungi Administrator untuk reset kata sandi akun Anda.'))
+        ->name('password.reset');
 });
 
 Route::middleware(['auth', 'active'])->group(function () {

@@ -71,9 +71,14 @@ defineProps<{
                     </p>
 
                     <div class="mt-4 flex items-center justify-between border-t border-[#E2E8F0] pt-3 dark:border-[#3E4F69]">
-                        <Link :href="route('student.courses.show', row.course.id)" class="text-xs font-semibold text-[#1B2CC1] hover:underline dark:text-[#ABD2FA]">
+                        <Link
+                            v-if="row.course"
+                            :href="route('student.courses.show', row.course.id)"
+                            class="text-xs font-semibold text-[#1B2CC1] hover:underline dark:text-[#ABD2FA]"
+                        >
                             Buka Kelas
                         </Link>
+                        <span v-else class="text-xs text-[#475569] dark:text-[#CBD5E1]">Kelas diarsipkan</span>
                         <Link
                             v-if="row.certificate"
                             :href="route('certificates.show', row.certificate.id)"

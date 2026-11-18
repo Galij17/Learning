@@ -21,9 +21,9 @@ class SubjectController extends Controller
         $subjects = Subject::query()
             ->with('category:id,name')
             ->withCount('courses')
-            ->when($request->string('search')->toString(), fn ($q, $s) => $q
+            ->when($request->string('search')->toString(), fn ($q, $s) => $q->where(fn ($sub) => $sub
                 ->where('name', 'like', "%{$s}%")
-                ->orWhere('code', 'like', "%{$s}%"))
+                ->orWhere('code', 'like', "%{$s}%")))
             ->when($request->integer('category_id'), fn ($q, $catId) => $q->where('category_id', $catId))
             ->orderBy('code')
             ->paginate(12)

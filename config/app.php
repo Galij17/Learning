@@ -65,7 +65,9 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'UTC'),
+
+    'demo_mode' => (bool) env('LMS_DEMO_MODE', false),
 
     /*
     |--------------------------------------------------------------------------

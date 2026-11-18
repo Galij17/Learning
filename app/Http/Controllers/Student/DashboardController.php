@@ -19,6 +19,7 @@ class DashboardController extends Controller
         $student = $request->user();
 
         $enrollments = Enrollment::query()
+            ->whereHas('course')
             ->where('student_id', $student->id)
             ->whereIn('status', ['active', 'completed'])
             ->with([
@@ -52,6 +53,7 @@ class DashboardController extends Controller
             ->get();
 
         $grades = Grade::query()
+            ->whereHas('course')
             ->where('student_id', $student->id)
             ->with('course:id,title,code')
             ->get();
@@ -60,7 +62,7 @@ class DashboardController extends Controller
             'enrolled_courses' => $enrollments->count(),
             'completed_courses' => $enrollments->where('status', 'completed')->count(),
             'average_progress' => round((float) $enrollments->avg('progress_percentage'), 1),
-            'certificates_count' => Certificate::where('student_id', $student->id)->count(),
+            'certificates_count' => Certificate::whereHas('course')->where('student_id', $student->id)->count(),
         ];
 
         $progressChart = $enrollments->take(6)->map(fn (Enrollment $e) => [

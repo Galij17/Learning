@@ -4,7 +4,9 @@ import { Head, router, useForm } from '@inertiajs/vue3';
 import { CalendarRange, Plus, Trash2 } from 'lucide-vue-next';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import AppModal from '@/Components/AppModal.vue';
+import ConfirmModal from '@/Components/ConfirmModal.vue';
 import EmptyState from '@/Components/EmptyState.vue';
+import InputError from '@/Components/InputError.vue';
 import PaginationBar from '@/Components/PaginationBar.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
 import type { AcademicPeriod, PaginatedData } from '@/types';
@@ -15,6 +17,8 @@ defineProps<{
 
 const showModal = ref(false);
 const editing = ref<AcademicPeriod | null>(null);
+const deletingPeriod = ref<AcademicPeriod | null>(null);
+const isDeleting = ref(false);
 
 const form = useForm({
     name: '',
@@ -27,11 +31,13 @@ const form = useForm({
 function openCreate(): void {
     editing.value = null;
     form.reset();
+    form.clearErrors();
     showModal.value = true;
 }
 
 function openEdit(period: AcademicPeriod): void {
     editing.value = period;
+    form.clearErrors();
     form.name = period.name;
     form.code = period.code;
     form.start_date = period.start_date.slice(0, 10);
@@ -49,9 +55,19 @@ function submit(): void {
 }
 
 function remove(period: AcademicPeriod): void {
-    if (confirm(`Hapus periode ${period.name}?`)) {
-        router.delete(route('admin.periods.destroy', period.id));
-    }
+    deletingPeriod.value = period;
+}
+
+function confirmRemove(): void {
+    if (!deletingPeriod.value) return;
+    isDeleting.value = true;
+    router.delete(route('admin.periods.destroy', deletingPeriod.value.id), {
+        preserveScroll: true,
+        onFinish: () => {
+            isDeleting.value = false;
+            deletingPeriod.value = null;
+        },
+    });
 }
 </script>
 
@@ -111,22 +127,24 @@ function remove(period: AcademicPeriod): void {
                     <div>
                         <label for="per-code" class="block text-sm font-semibold">Kode</label>
                         <input id="per-code" v-model="form.code" type="text" required placeholder="2026-1" class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
-                        <p v-if="form.errors.code" class="mt-1 text-xs text-red-600">{{ form.errors.code }}</p>
+                        <InputError :message="form.errors.code" />
                     </div>
                     <div>
                         <label for="per-name" class="block text-sm font-semibold">Nama Periode</label>
                         <input id="per-name" v-model="form.name" type="text" required placeholder="2026/2027 Ganjil" class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                        <InputError :message="form.errors.name" />
                     </div>
                 </div>
                 <div class="grid gap-4 sm:grid-cols-2">
                     <div>
                         <label for="per-start" class="block text-sm font-semibold">Mulai</label>
                         <input id="per-start" v-model="form.start_date" type="date" required class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
+                        <InputError :message="form.errors.start_date" />
                     </div>
                     <div>
                         <label for="per-end" class="block text-sm font-semibold">Berakhir</label>
                         <input id="per-end" v-model="form.end_date" type="date" required class="mt-1 w-full rounded-[8px] border border-[#E2E8F0] bg-white px-3 py-2 text-sm dark:border-[#1B2CC1] dark:bg-[#1E293B]" />
-                        <p v-if="form.errors.end_date" class="mt-1 text-xs text-red-600">{{ form.errors.end_date }}</p>
+                        <InputError :message="form.errors.end_date" />
                     </div>
                 </div>
                 <label class="inline-flex min-h-[44px] items-center gap-2 text-sm">
@@ -139,5 +157,15 @@ function remove(period: AcademicPeriod): void {
                 </div>
             </form>
         </AppModal>
+
+        <ConfirmModal
+            :show="Boolean(deletingPeriod)"
+            title="Hapus Periode Akademik"
+            :message="`Hapus periode ${deletingPeriod?.name ?? ''}?`"
+            confirm-text="Hapus"
+            :processing="isDeleting"
+            @confirm="confirmRemove"
+            @cancel="deletingPeriod = null"
+        />
     </AuthenticatedLayout>
 </template>
