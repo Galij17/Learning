@@ -36,17 +36,19 @@ until php artisan migrate --force; do
     sleep 2
 done
 
-# Seed initial demo data once when users table is empty
+# Seed initial or enriched demo data when users table is empty or demo bank questions are missing
 if php -r '
 require "vendor/autoload.php";
 $app = require "bootstrap/app.php";
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-exit(\App\Models\User::query()->exists() ? 1 : 0);
+$needsInitial = ! \App\Models\User::query()->exists();
+$needsDemoEnrich = (bool) config("app.demo_mode") && \App\Models\Question::query()->count() < 10;
+exit(($needsInitial || $needsDemoEnrich) ? 0 : 1);
 '; then
-    echo "Database has no users yet. Running initial demo seed..."
+    echo "Running demo seed..."
     php artisan db:seed --force
 else
-    echo "Users already exist; skipping seed."
+    echo "Demo seed already present; skipping."
 fi
 
 # Cache configuration, routes, and views for production performance
